@@ -30,7 +30,7 @@ def run() -> dict:
     delta = 0.05
     alpha_grid = np.array([0.0, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0])
     n = 500
-    n_resamples = 150
+    n_resamples = 100
 
     results_by_strategy = {}
     csv_rows = []

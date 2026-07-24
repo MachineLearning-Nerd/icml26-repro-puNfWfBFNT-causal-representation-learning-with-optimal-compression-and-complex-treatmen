@@ -48,10 +48,59 @@ def differentiable_hsic(X: torch.Tensor, E: torch.Tensor, sigma_x: float, sigma_
     n = X.shape[0]
     Kx = differentiable_rbf_kernel(X, X, sigma_x)
     Le = differentiable_rbf_kernel(E, E, sigma_e)
-    # Centering
     Kx_c = Kx - Kx.mean(dim=0, keepdim=True) - Kx.mean(dim=1, keepdim=True) + Kx.mean()
     Le_c = Le - Le.mean(dim=0, keepdim=True) - Le.mean(dim=1, keepdim=True) + Le.mean()
     return torch.clamp((Kx_c * Le_c).sum() / ((n - 1) ** 2), min=0.0)
+
+
+def differentiable_pairwise_mmd_sum(Z: torch.Tensor, T: torch.Tensor, K: int, sigma: float) -> torch.Tensor:
+    """Vectorized sum of pairwise MMD IPMs over all C(K,2) pairs.
+
+    Computes the full N×N kernel matrix once, then extracts all pairwise MMDs
+    via group indicator matrices. O(N²d + K²) instead of O(K²·n²d).
+    """
+    N = Z.shape[0]
+    K_full = differentiable_rbf_kernel(Z, Z, sigma)  # (N, N)
+    T_oh = torch.nn.functional.one_hot(T, K).float()  # (N, K)
+    n_k = T_oh.sum(dim=0).clamp(min=1.0)  # (K,)
+
+    # Cross-group kernel means: A[j,k] = (1/(n_j*n_k)) * sum K(x_i, x_l) for T_i=j, T_l=k
+    # = (T_oh^T @ K_full @ T_oh) / (n_j * n_k)
+    cross = T_oh.t() @ K_full @ T_oh  # (K, K)
+    norm = n_k.unsqueeze(1) * n_k.unsqueeze(0)  # (K, K)
+    A = cross / norm.clamp(min=1.0)  # A[j,k] = mean kernel between groups j,k
+
+    # MMD^2(j,k) = A[j,j] + A[k,k] - 2*A[j,k]
+    diag = torch.diag(A)
+    mmd2_mat = diag.unsqueeze(1) + diag.unsqueeze(0) - 2.0 * A  # (K, K)
+    mmd2_mat = torch.clamp(mmd2_mat, min=0.0)
+
+    # Sum sqrt(MMD^2) for upper triangle (j < k)
+    mmd_mat = torch.sqrt(mmd2_mat + 1e-10)
+    mask = torch.triu(torch.ones(K, K, device=Z.device), diagonal=1).bool()
+    return (mmd_mat * mask).sum()
+
+
+def differentiable_ova_mmd_sum(Z: torch.Tensor, T: torch.Tensor, K: int, sigma: float) -> torch.Tensor:
+    """Vectorized sum of one-vs-all MMD IPMs."""
+    N = Z.shape[0]
+    K_full = differentiable_rbf_kernel(Z, Z, sigma)
+    T_oh = torch.nn.functional.one_hot(T, K).float()
+    n_k = T_oh.sum(dim=0).clamp(min=1.0)
+    n_neg = (N - n_k).clamp(min=1.0)
+    T_neg = 1.0 - T_oh  # (N, K), 1 if T != k
+
+    total = torch.tensor(0.0, device=Z.device)
+    cross = T_oh.t() @ K_full @ T_oh
+    cross_neg = T_oh.t() @ K_full @ T_neg
+    cross_neg_neg = T_neg.t() @ K_full @ T_neg
+
+    diag_kk = torch.diag(cross) / (n_k ** 2)
+    diag_neg_neg = torch.diag(cross_neg_neg) / (n_neg ** 2)
+    cross_k_neg = torch.diag(cross_neg) / (n_k * n_neg)
+
+    mmd2_vec = torch.clamp(diag_kk + diag_neg_neg - 2.0 * cross_k_neg, min=0.0)
+    return torch.sqrt(mmd2_vec + 1e-10).sum()
 
 
 class RepresentationNet(nn.Module):
@@ -120,34 +169,14 @@ class CFRModel:
         )
 
     def _compute_balance_loss(self, Z: torch.Tensor, T: torch.Tensor) -> torch.Tensor:
-        """Compute strategy-specific differentiable balancing loss."""
+        """Compute strategy-specific differentiable balancing loss (vectorized)."""
         if self.strategy == "pair":
-            total = torch.tensor(0.0, device=Z.device)
-            for j in range(self.K):
-                Zj = Z[T == j]
-                if Zj.shape[0] < 2:
-                    continue
-                for k in range(j + 1, self.K):
-                    Zk = Z[T == k]
-                    if Zk.shape[0] < 2:
-                        continue
-                    total = total + differentiable_mmd_ipm(Zj, Zk, self.sigma)
-            return total
-
+            return differentiable_pairwise_mmd_sum(Z, T, self.K, self.sigma)
         elif self.strategy == "ova":
-            total = torch.tensor(0.0, device=Z.device)
-            for k in range(self.K):
-                Zk = Z[T == k]
-                Znk = Z[T != k]
-                if Zk.shape[0] < 2 or Znk.shape[0] < 2:
-                    continue
-                total = total + differentiable_mmd_ipm(Zk, Znk, self.sigma)
-            return total
-
+            return differentiable_ova_mmd_sum(Z, T, self.K, self.sigma)
         elif self.strategy == "agg":
             E = self._embeddings(T)
             return differentiable_hsic(Z, E, self.sigma, 1.0)
-
         else:
             return torch.tensor(0.0, device=Z.device)
 

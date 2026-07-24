@@ -119,6 +119,9 @@ def monte_carlo_alpha_hat(
         Q = compute_profile_criterion(Z, data["T"], data["Y"], K, strategy, alpha_grid, sigma, n)
         alpha_hats[r] = alpha_grid[int(np.argmin(Q))]
         imbalance_hats[r] = strat.imbalance(Z, data["T"], K, sigma=sigma)
+        if (r + 1) % 50 == 0:
+            from verifiers.common import log
+            log(f"      resample {r+1}/{n_resamples} (K={K}, {strategy})")
 
     deviations = np.abs(alpha_hats - alpha_bd)
     r_S = float(np.std(imbalance_hats))  # concentration of imbalance

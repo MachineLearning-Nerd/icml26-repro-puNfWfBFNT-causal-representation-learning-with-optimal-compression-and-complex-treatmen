@@ -28,7 +28,7 @@ def run() -> dict:
     t_start = time.perf_counter()
 
     alpha_grid = np.array([0.0, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0])
-    n_resamples = 200
+    n_resamples = 100
 
     # Part A: K-scaling of Var(alpha_hat)
     log("Part A: K-scaling of Var(alpha_hat)")

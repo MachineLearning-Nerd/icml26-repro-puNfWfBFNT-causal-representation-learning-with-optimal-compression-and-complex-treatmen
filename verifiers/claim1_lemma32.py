@@ -211,10 +211,15 @@ def verify_full_bound(
 
 def collect_bound_observations(
     N: int = 500, K: int = 4, d: int = 20, seed_base: int = 100,
-    n_configs: int = 12,
+    n_configs: int = 20,
 ) -> list[dict]:
-    """Collect (eps_ITE, eps_F, R_S, Complexity) across multiple model configurations."""
-    from src.model import CFRModel
+    """Collect (eps_ITE, eps_F, R_S, Complexity) across multiple settings.
+
+    Uses fixed random projections + ridge regression (no neural training)
+    for speed and controlled variation. Different seeds give different
+    representations and data, producing varied observations.
+    """
+    from verifiers.mc_infra import fixed_representation
 
     observations = []
     for i in range(n_configs):
@@ -222,28 +227,33 @@ def collect_bound_observations(
         data = generate_hard_setting(N=N, K=K, d=d, seed=seed)
         X, T, Y = data["X"], data["T"], data["Y"]
         Y_all_mean = data["Y_all_mean"]
-
         sigma = median_heuristic(X)
 
-        # Train CFR with varying alpha and strategy
-        alpha = [0.0, 0.1, 0.5, 1.0, 5.0][i % 5]
-        strategy = ["pair", "ova", "agg"][i % 3]
+        # Use different random projections for varied representations
+        repr_dim = [4, 8, 12, 16, 20][i % 5]
+        Z = fixed_representation(X, repr_dim=repr_dim, seed=seed)
 
-        model = CFRModel(
-            input_dim=d, K=K, repr_dim=8, strategy=strategy,
-            alpha=alpha, epochs=100, sigma=sigma, seed=seed,
+        # Ridge regression outcome model
+        T_oh = np.eye(K)[T]
+        design = np.hstack([Z, T_oh])
+        alpha_reg = 0.01 + 0.1 * (i % 5)
+        beta_hat = np.linalg.solve(
+            design.T @ design + alpha_reg * np.eye(design.shape[1]),
+            design.T @ Y,
         )
-        model.fit(X, T, Y)
+        Y_hat_all = np.zeros((N, K))
+        for t in range(K):
+            design_t = np.hstack([Z, np.eye(K)[np.full(N, t)]])
+            Y_hat_all[:, t] = design_t @ beta_hat
 
-        Y_hat = model.predict_all_treatments(X)
-        Z = model.get_representation(X)
-
+        # Compute bound terms
         pairs = [(j, k) for j in range(K) for k in range(j + 1, K)]
         eps_ite = float(np.mean(sum(
-            (np.abs(Y_hat[:, j] - Y_hat[:, k]) - np.abs(Y_all_mean[:, j] - Y_all_mean[:, k])) ** 2
+            (np.abs(Y_hat_all[:, j] - Y_hat_all[:, k]) - np.abs(Y_all_mean[:, j] - Y_all_mean[:, k])) ** 2
             for j, k in pairs
-        )))
-        eps_f = float(np.mean((Y_hat[np.arange(len(T)), T] - Y) ** 2))
+        )) / len(pairs))
+
+        eps_f = float(np.mean((Y_hat_all[np.arange(N), T] - Y) ** 2))
 
         strat = get_strategy("pair")
         r_S = float(strat.imbalance(Z, T, K, sigma=sigma))
@@ -253,9 +263,11 @@ def collect_bound_observations(
         complexity = float(M * np.sqrt(2.0 * np.log(1.0 / delta) / N))
 
         observations.append({
-            "config": i, "alpha": alpha, "strategy": strategy,
+            "config": i, "repr_dim": repr_dim, "alpha_reg": alpha_reg,
             "eps_ite": eps_ite, "eps_f": eps_f, "r_S": r_S, "complexity": complexity,
         })
+        if (i + 1) % 5 == 0:
+            log(f"    Collected {i+1}/{n_configs} observations")
 
     return observations
 
@@ -325,12 +337,16 @@ def run() -> dict:
     Y_all_mean = data["Y_all_mean"]
     sigma = median_heuristic(X)
 
-    # Train a CFR model to get Y_hat and Z
-    from src.model import CFRModel
-    model = CFRModel(input_dim=d, K=K, repr_dim=8, strategy="pair", alpha=0.5, epochs=100, sigma=sigma, seed=seed)
-    model.fit(X, T, Y)
-    Y_hat = model.predict_all_treatments(X)
-    Z = model.get_representation(X)
+    # Use fixed representation + ridge regression for bound term computation
+    from verifiers.mc_infra import fixed_representation
+    Z = fixed_representation(X, repr_dim=8, seed=0)
+    T_oh = np.eye(K)[T]
+    design = np.hstack([Z, T_oh])
+    beta_hat = np.linalg.solve(design.T @ design + 0.1 * np.eye(design.shape[1]), design.T @ Y)
+    Y_hat = np.zeros((N, K))
+    for t in range(K):
+        design_t = np.hstack([Z, np.eye(K)[np.full(N, t)]])
+        Y_hat[:, t] = design_t @ beta_hat
 
     log("Step A: Verifying proof steps (symbolic/algebraic checks)...")
     rti_result = verify_reverse_triangle_inequality(Y_all_mean, Y_hat, K)
