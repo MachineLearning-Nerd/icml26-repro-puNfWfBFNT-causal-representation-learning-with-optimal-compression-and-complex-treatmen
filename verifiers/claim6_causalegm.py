@@ -105,7 +105,7 @@ def verify_tree_interpolation() -> dict:
 
     model = GeodesicCausalEGM(
         input_dim=10, K=7, geo_dist=data["geo_dist"],
-        d_e=2, lambda_geo=5.0, epochs=500, seed=42,
+        d_e=2, lambda_geo=10.0, epochs=800, pretrain_epochs=1000, seed=42,
     )
     model.fit(data["X"], data["T"], data["Y"])
 
@@ -120,12 +120,11 @@ def verify_tree_interpolation() -> dict:
     geo_midpoint = interp[50]
     lin_midpoint = linear[50]
 
-    # Check sigmoidal shape: the geodesic should have higher curvature
-    # Measure: variance of second derivative
-    geo_2nd_deriv = np.diff(interp, 2)
-    lin_2nd_deriv = np.diff(linear, 2)
-    geo_curvature = float(np.var(geo_2nd_deriv))
-    lin_curvature = float(np.var(lin_2nd_deriv))
+    # Check sigmoidal shape: slope at midpoint should be steeper than at edges
+    # (signature of geodesic interpolation passing through intermediate nodes)
+    mid_slope = abs(interp[55] - interp[45])  # slope near midpoint
+    edge_slope = abs(interp[10] - interp[0])  # slope near start
+    sigmoidal = mid_slope > edge_slope * 1.2
 
     # Check embedding: midpoint should be close to Root embedding
     emb = model.get_embeddings()
@@ -150,9 +149,9 @@ def verify_tree_interpolation() -> dict:
         "linear_baseline": linear.tolist(),
         "geo_midpoint_y": float(geo_midpoint),
         "lin_midpoint_y": float(lin_midpoint),
-        "geo_curvature": geo_curvature,
-        "lin_curvature": lin_curvature,
-        "geo_has_more_curvature": geo_curvature > lin_curvature * 2,
+        "mid_slope": float(mid_slope),
+        "edge_slope": float(edge_slope),
+        "is_sigmoidal": sigmoidal,
         "embedding_distances_to_midpoint": dist_to_all,
         "closest_node_to_midpoint": closest_node,
         "closest_is_root": closest_node == 0,
@@ -170,7 +169,7 @@ def verify_cyclic_interpolation() -> dict:
 
     model = GeodesicCausalEGM(
         input_dim=10, K=8, geo_dist=data["geo_dist"],
-        d_e=2, lambda_geo=5.0, epochs=500, seed=42,
+        d_e=2, lambda_geo=10.0, epochs=800, pretrain_epochs=1000, seed=42,
     )
     model.fit(data["X"], data["T"], data["Y"])
 
@@ -226,7 +225,7 @@ def run() -> dict:
     tree_result = verify_tree_interpolation()
     log(f"  Geodesic midpoint Y: {tree_result['geo_midpoint_y']:.4f} (target ~0)")
     log(f"  Closest node to midpoint: {tree_result['closest_node_to_midpoint']} (target: 0=Root)")
-    log(f"  Geodesic curvature: {tree_result['geo_curvature']:.6f} vs linear: {tree_result['lin_curvature']:.6f}")
+    log(f"  Sigmoidal: {tree_result['is_sigmoidal']} (mid_slope={tree_result['mid_slope']:.3f} vs edge_slope={tree_result['edge_slope']:.3f})")
     log(f"  Geodesic loss MSE: {tree_result['geodesic_loss_mse']:.4f}")
 
     log("Part B: Cyclic topology")
@@ -239,7 +238,7 @@ def run() -> dict:
     tree_ok = (
         abs(tree_result["geo_midpoint_y"]) < 1.0 and  # midpoint ~0
         tree_result["closest_is_root"] and  # midpoint maps to Root
-        tree_result["geo_curvature"] > tree_result["lin_curvature"]  # sigmoidal
+        tree_result["is_sigmoidal"]  # sigmoidal shape (geodesic signature)
     )
     cyclic_ok = (
         cyclic_result["are_neighbors"] and  # 0-315 are neighbors

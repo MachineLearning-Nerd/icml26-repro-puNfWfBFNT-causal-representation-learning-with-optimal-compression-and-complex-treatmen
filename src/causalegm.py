@@ -1,10 +1,7 @@
 """Multi-Treatment CausalEGM: generative model with treatment embeddings,
 softmax intervention, and geodesic regularization (Section 5, arXiv 2603.11907).
 
-Architecture (simplified for CPU):
-  - Treatment embedding: e: T -> R^{d_e}
-  - Outcome generator: G(Z_c, e_T) -> Y_hat
-  - Geodesic loss: forces ||e_i - e_j|| ≈ d_M(t_i, t_j)
+Uses MDS initialization + two-phase training for robust geodesic embedding.
 """
 from __future__ import annotations
 import numpy as np
@@ -13,20 +10,19 @@ import torch.nn as nn
 
 
 class TreatmentEmbedding(nn.Module):
-    """Learnable treatment embedding e: T -> R^{d_e}."""
-
-    def __init__(self, K: int, d_e: int = 2):
+    def __init__(self, K: int, d_e: int = 2, init: np.ndarray | None = None):
         super().__init__()
         self.embedding = nn.Embedding(K, d_e)
-        nn.init.normal_(self.embedding.weight, std=0.1)
+        if init is not None:
+            self.embedding.weight.data = torch.tensor(init, dtype=torch.float32)
+        else:
+            nn.init.normal_(self.embedding.weight, std=0.1)
 
     def forward(self, T):
         return self.embedding(T)
 
 
 class OutcomeGenerator(nn.Module):
-    """Maps (X_features, treatment_embedding) -> outcome Y."""
-
     def __init__(self, input_dim: int, d_e: int, hidden_dim: int = 64):
         super().__init__()
         self.net = nn.Sequential(
@@ -41,15 +37,28 @@ class OutcomeGenerator(nn.Module):
         return self.net(torch.cat([X, e_T], dim=-1)).squeeze(-1)
 
 
+def mds_init(geo_dist: np.ndarray, d_e: int = 2, seed: int = 42) -> np.ndarray:
+    """Initialize embeddings via classical multidimensional scaling from distance matrix."""
+    from sklearn.manifold import MDS
+    n = geo_dist.shape[0]
+    mds = MDS(n_components=d_e, dissimilarity="precomputed", random_state=seed,
+              normalized_stress="auto")
+    emb = mds.fit_transform(geo_dist)
+    # Scale to match geodesic distance scale
+    emb_dist = np.zeros_like(geo_dist)
+    for i in range(n):
+        for j in range(n):
+            emb_dist[i, j] = np.linalg.norm(emb[i] - emb[j])
+    scale = np.median(geo_dist[geo_dist > 0]) / max(np.median(emb_dist[emb_dist > 0]), 1e-8)
+    return emb * scale
+
+
 class GeodesicCausalEGM:
     """Multi-Treatment CausalEGM with geodesic regularization.
 
-    Parameters:
-      input_dim: covariate dimension
-      K: number of treatments
-      d_e: embedding dimension
-      lambda_geo: geodesic loss weight
-      geo_dist: (K, K) ground-truth geodesic distance matrix
+    Two-phase training:
+      Phase 1: Pre-train embeddings with geodesic loss only
+      Phase 2: Train full model (embeddings + generator) jointly
     """
 
     def __init__(
@@ -58,9 +67,10 @@ class GeodesicCausalEGM:
         K: int,
         geo_dist: np.ndarray,
         d_e: int = 2,
-        lambda_geo: float = 5.0,
+        lambda_geo: float = 10.0,
         lr: float = 1e-3,
-        epochs: int = 500,
+        epochs: int = 800,
+        pretrain_epochs: int = 1000,
         seed: int = 42,
         device: str = "cpu",
     ):
@@ -70,29 +80,38 @@ class GeodesicCausalEGM:
         self.lambda_geo = lambda_geo
         self.lr = lr
         self.epochs = epochs
+        self.pretrain_epochs = pretrain_epochs
         self.device = device
 
         self.geo_dist_t = torch.tensor(geo_dist, dtype=torch.float32, device=device)
 
         torch.manual_seed(seed)
-        self.treat_emb = TreatmentEmbedding(K, d_e).to(device)
+        init = mds_init(geo_dist, d_e, seed)
+        self.treat_emb = TreatmentEmbedding(K, d_e, init=init).to(device)
         self.generator = OutcomeGenerator(input_dim, d_e).to(device)
         self.optimizer = torch.optim.Adam(
             list(self.treat_emb.parameters()) + list(self.generator.parameters()), lr=lr
         )
 
     def _geodesic_loss(self) -> torch.Tensor:
-        """L_geo = mean_{i,j} (||e_i - e_j|| - d_M(i,j))^2."""
-        emb = self.treat_emb.embedding.weight  # (K, d_e)
-        dist_emb = torch.cdist(emb, emb)  # (K, K)
+        emb = self.treat_emb.embedding.weight
+        dist_emb = torch.cdist(emb, emb)
         return ((dist_emb - self.geo_dist_t) ** 2).mean()
 
     def fit(self, X: np.ndarray, T: np.ndarray, Y: np.ndarray):
-        """Train the model."""
         X_t = torch.tensor(X, dtype=torch.float32, device=self.device)
         T_t = torch.tensor(T, dtype=torch.long, device=self.device)
         Y_t = torch.tensor(Y, dtype=torch.float32, device=self.device)
 
+        # Phase 1: Pre-train embeddings with geodesic loss
+        emb_opt = torch.optim.Adam(self.treat_emb.parameters(), lr=self.lr)
+        for epoch in range(self.pretrain_epochs):
+            emb_opt.zero_grad()
+            loss = self._geodesic_loss()
+            loss.backward()
+            emb_opt.step()
+
+        # Phase 2: Train full model jointly
         for epoch in range(self.epochs):
             self.optimizer.zero_grad()
             e_T = self.treat_emb(T_t)
@@ -105,18 +124,7 @@ class GeodesicCausalEGM:
 
         return self
 
-    def interpolate(
-        self,
-        X: np.ndarray,
-        t_A: int,
-        t_B: int,
-        n_steps: int = 101,
-    ) -> np.ndarray:
-        """Interpolate outcomes from treatment t_A to t_B.
-
-        Y_alpha = G(X, (1-alpha)*e_A + alpha*e_B)
-        Returns array of shape (n_steps,) for mean outcome at each alpha.
-        """
+    def interpolate(self, X: np.ndarray, t_A: int, t_B: int, n_steps: int = 101) -> np.ndarray:
         X_t = torch.tensor(X, dtype=torch.float32, device=self.device)
         alphas = np.linspace(0, 1, n_steps)
         results = np.zeros(n_steps)
@@ -134,12 +142,10 @@ class GeodesicCausalEGM:
         return results
 
     def get_embeddings(self) -> np.ndarray:
-        """Return learned treatment embeddings (K, d_e)."""
         with torch.no_grad():
             return self.treat_emb.embedding.weight.cpu().numpy()
 
     def predict_outcome(self, X: np.ndarray, T: np.ndarray) -> np.ndarray:
-        """Predict outcome for given X and T."""
         X_t = torch.tensor(X, dtype=torch.float32, device=self.device)
         T_t = torch.tensor(T, dtype=torch.long, device=self.device)
         with torch.no_grad():
