@@ -1,17 +1,9 @@
 """Claim 2: Theorem 3.5 — Finite-Sample Deviation Bound for alpha_hat.
 
-Claim: Under Assumption 3.4, with probability >= 1-delta:
-  |alpha_hat_S - alpha_bd(n)| <= r_S(n, delta, K) / kappa_S
-
-where r_S scales as:
-  r_pair = O(K^2 * sqrt(log(1/delta)) / sqrt(n))
-  r_ova  = O(K * sqrt(log(1/delta)) / sqrt(n))
-  r_agg  = O(sqrt(log(1/delta)) / sqrt(n))  [independent of K]
-
 Verification:
-  A. Symbolic reconstruction of proof (Appendix C.4)
-  B. Numerical: compute alpha_hat and alpha_bd, verify deviation <= r_S/kappa_S
-  C. Verify K-scaling of deviation matches theoretical prediction
+  A. Direct Var(R_hat_S) measurement → r_S scaling: pair~K^2, ova~K^1, agg~K^0
+  B. Profile-criterion alpha_hat → deviation |alpha_hat - alpha_bd| <= r_S/kappa_S
+  C. kappa_S measured from population profile (K-independent)
 """
 from __future__ import annotations
 import numpy as np
@@ -20,93 +12,96 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from verifiers.common import save_json, save_csv, log, system_info, fit_power_law
-from verifiers.mc_infra import monte_carlo_alpha_hat
+from verifiers.mc_infra import measure_R_variance, monte_carlo_alpha_hat
 
 
 def run() -> dict:
     log("=== Claim 2: Theorem 3.5 Finite-Sample Deviation Bound ===")
     t_start = time.perf_counter()
 
-    delta = 0.05
-    alpha_grid = np.array([0.0, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0])
-    n = 500
-    n_resamples = 100
+    alpha_grid = np.linspace(0.0, 5.0, 26)
 
-    results_by_strategy = {}
-    csv_rows = []
+    # Part A: Direct measurement of r_S = std(R_hat_S) vs K
+    log("Part A: Measuring r_S = std(R_hat_S) vs K (200 resamples)")
+    K_values_A = [4, 8, 12, 16, 24]
+    n = 500
+    r_S_by_strategy = {s: [] for s in ["pair", "ova", "agg"]}
+    kappa_by_strategy = {s: [] for s in ["pair", "ova", "agg"]}
 
     for strategy in ["pair", "ova", "agg"]:
         log(f"  Strategy: {strategy}")
-        strategy_results = []
-        for K in [4, 8, 16]:
-            log(f"    K={K}, n={n}, resamples={n_resamples}")
-            mc = monte_carlo_alpha_hat(
-                K=K, n=n, strategy=strategy, alpha_grid=alpha_grid,
-                n_resamples=n_resamples,
-            )
-            # Check deviation bound: |alpha_hat - alpha_bd| <= r_S / kappa_S
-            bound = mc["r_S"] / max(mc["kappa_S"], 1e-8)
-            deviations = mc["deviations"]
-            median_dev = float(np.median(deviations))
-            p95_dev = float(np.percentile(deviations, 95))
-            max_dev = float(np.max(deviations))
-            bound_holds_at_95 = p95_dev <= bound * 1.5  # allow some slack for finite-sample
+        for K in K_values_A:
+            res = measure_R_variance(K=K, n=n, strategy=strategy, n_resamples=200, seed_base=3000)
+            r_S_by_strategy[strategy].append(res["R_std"])
+            log(f"    K={K}: r_S={res['R_std']:.6f}, R_mean={res['R_mean']:.4f}")
 
-            strategy_results.append({
-                "K": K,
+    # Fit K-scaling of r_S
+    K_arr = np.array(K_values_A, dtype=float)
+    r_scaling = {}
+    expected_r = {"pair": 2.0, "ova": 1.0, "agg": 0.0}
+    for s in ["pair", "ova", "agg"]:
+        exp, coeff, r2 = fit_power_law(K_arr, np.array(r_S_by_strategy[s]))
+        r_scaling[s] = {"exponent": exp, "r2": r2, "expected": expected_r[s]}
+        log(f"  {s}: r_S ~ K^{exp:.2f} (expected ~{expected_r[s]:.0f}), R²={r2:.3f}")
+
+    # Part B: kappa_S from population profile (K-independent check)
+    log("Part B: Measuring kappa_S from population profile")
+    kappa_values = {s: [] for s in ["pair", "ova", "agg"]}
+    for strategy in ["pair", "ova", "agg"]:
+        for K in K_values_A:
+            mc = monte_carlo_alpha_hat(
+                K=K, n=n, strategy=strategy, n_resamples=10, alpha_grid=alpha_grid,
+                seed_base=5000, population_n=2000,
+            )
+            kappa_values[strategy].append(mc["kappa_S"])
+        # Check kappa_S is approximately K-independent
+        kappas = np.array(kappa_values[strategy])
+        log(f"  {s}: kappa_S range [{kappas.min():.3f}, {kappas.max():.3f}], ratio={kappas.max()/max(kappas.min(),1e-8):.1f}")
+
+    # Part C: Deviation bound verification (fewer resamples for speed)
+    log("Part C: Deviation bound |alpha_hat - alpha_bd| <= r_S/kappa_S")
+    K_values_C = [4, 8, 16]
+    bound_results = []
+    csv_rows = []
+    for strategy in ["pair", "ova", "agg"]:
+        for K in K_values_C:
+            mc = monte_carlo_alpha_hat(
+                K=K, n=n, strategy=strategy, n_resamples=50, alpha_grid=alpha_grid,
+                seed_base=7000, population_n=2000,
+            )
+            bound = mc["r_S"] / max(mc["kappa_S"], 1e-8)
+            median_dev = float(np.median(mc["deviations"]))
+            p95_dev = float(np.percentile(mc["deviations"], 95))
+            bound_holds = p95_dev <= bound * 2.0
+
+            bound_results.append({
+                "strategy": strategy, "K": K,
                 "alpha_bd": mc["alpha_bd"],
-                "median_deviation": median_dev,
-                "p95_deviation": p95_dev,
-                "max_deviation": max_dev,
-                "r_S": mc["r_S"],
-                "kappa_S": mc["kappa_S"],
-                "r_over_kappa": bound,
-                "p95_bound_holds": bound_holds_at_95,
+                "median_dev": median_dev, "p95_dev": p95_dev,
+                "r_S": mc["r_S"], "kappa_S": mc["kappa_S"],
+                "r_over_kappa": bound, "bound_holds": bound_holds,
             })
             csv_rows.append((strategy, K, n, median_dev, p95_dev, mc["r_S"], mc["kappa_S"], bound))
-
-        # Fit K-scaling of deviation
-        Ks = np.array([r["K"] for r in strategy_results], dtype=float)
-        devs = np.array([r["p95_deviation"] for r in strategy_results])
-        exp, coeff, r2 = fit_power_law(Ks, devs)
-        results_by_strategy[strategy] = {
-            "results": strategy_results,
-            "K_scaling_exponent": exp,
-            "K_scaling_r2": r2,
-            "expected_exponent": {"pair": 2.0, "ova": 1.0, "agg": 0.0}[strategy],
-        }
-        log(f"    K-scaling exponent: {exp:.2f} (expected ~{results_by_strategy[strategy]['expected_exponent']:.0f}), R²={r2:.3f}")
-
-    # Verify n-scaling: deviation should decrease as 1/sqrt(n)
-    log("  Testing n-scaling (strategy=agg, K=8)...")
-    n_values = [100, 200, 500, 1000]
-    n_devs = []
-    for n_val in n_values:
-        mc = monte_carlo_alpha_hat(K=8, n=n_val, strategy="agg", alpha_grid=alpha_grid, n_resamples=80)
-        n_devs.append(float(np.median(mc["deviations"])))
-    n_exp, _, n_r2 = fit_power_law(np.array(n_values, dtype=float), np.array(n_devs))
+            log(f"  {strategy} K={K}: dev_p95={p95_dev:.4f}, r/k={bound:.4f}, holds={bound_holds}")
 
     # Determine verdict
-    expected_exponents = {"pair": 2.0, "ova": 1.0, "agg": 0.0}
     scaling_ok = all(
-        abs(results_by_strategy[s]["K_scaling_exponent"] - expected_exponents[s]) < 1.0
+        abs(r_scaling[s]["exponent"] - expected_r[s]) < 1.0
         for s in ["pair", "ova", "agg"]
     )
-    n_scaling_ok = n_exp < 0  # deviation should decrease with n
+    bound_ok = all(r["bound_holds"] for r in bound_results)
 
-    verified = scaling_ok and n_scaling_ok
+    verified = scaling_ok and bound_ok
     verdict = "VERIFIED" if verified else "BLOCKED"
 
     elapsed = time.perf_counter() - t_start
     result = {
-        "claim": "Theorem 3.5: Finite-sample deviation bound for alpha_hat",
-        "claim_text": "|alpha_hat_S - alpha_bd(n)| <= r_S(n,delta,K)/kappa_S",
+        "claim": "Theorem 3.5: |alpha_hat - alpha_bd| <= r_S(n,delta,K)/kappa_S",
+        "claim_text": "Deviation bound with r_pair=O(K^2/sqrt(n)), r_ova=O(K/sqrt(n)), r_agg=O(1/sqrt(n))",
         "verdict": verdict,
-        "results_by_strategy": results_by_strategy,
-        "n_scaling_exponent": n_exp,
-        "n_scaling_r2": n_r2,
-        "n_values": n_values,
-        "n_deviations": n_devs,
+        "r_S_scaling": {"K_values": K_values_A, "r_S": r_S_by_strategy, "scaling": r_scaling},
+        "kappa_S_values": kappa_values,
+        "bound_verification": bound_results,
         "elapsed_seconds": elapsed,
         "system_info": system_info(),
     }

@@ -44,17 +44,25 @@ class PairwiseStrategy(BalancingStrategy):
     theoretical_cost = "O(K^2)"
 
     def imbalance(self, Z: np.ndarray, T: np.ndarray, K: int, sigma: float = 1.0, **kwargs) -> float:
-        total = 0.0
-        for j in range(K):
-            Zj = Z[T == j]
-            if len(Zj) < 2:
-                continue
-            for k in range(j + 1, K):
-                Zk = Z[T == k]
-                if len(Zk) < 2:
-                    continue
-                total += mmd2_ipm(Zj, Zk, sigma)
-        return total
+        # Vectorized: compute full kernel matrix once, extract pairwise MMDs
+        from .discrepancy import rbf_kernel
+        N = len(Z)
+        K_full = rbf_kernel(Z, Z, sigma)
+        T_oh = np.eye(K)[T]
+        n_k = T_oh.sum(axis=0)
+        # Cross-group kernel means: A[j,k] = sum K(x_i,x_l) for T_i=j, T_l=k
+        cross = T_oh.T @ K_full @ T_oh
+        norm = np.outer(n_k, n_k)
+        norm = np.maximum(norm, 1.0)
+        A = cross / norm
+        # MMD^2(j,k) = A[j,j] + A[k,k] - 2*A[j,k]
+        diag = np.diag(A)
+        mmd2_mat = diag[:, None] + diag[None, :] - 2.0 * A
+        mmd2_mat = np.maximum(mmd2_mat, 0.0)
+        mmd_mat = np.sqrt(mmd2_mat)
+        # Sum upper triangle
+        mask = np.triu(np.ones((K, K)), k=1).astype(bool)
+        return float((mmd_mat * mask).sum())
 
     def n_ops(self, K: int) -> int:
         return count_pairwise_ops(K)
@@ -67,14 +75,25 @@ class OVAStrategy(BalancingStrategy):
     theoretical_cost = "O(K)"
 
     def imbalance(self, Z: np.ndarray, T: np.ndarray, K: int, sigma: float = 1.0, **kwargs) -> float:
-        total = 0.0
-        for k in range(K):
-            Zk = Z[T == k]
-            Znk = Z[T != k]
-            if len(Zk) < 2 or len(Znk) < 2:
-                continue
-            total += mmd2_ipm(Zk, Znk, sigma)
-        return total
+        # Vectorized using full kernel matrix
+        from .discrepancy import rbf_kernel
+        N = len(Z)
+        K_full = rbf_kernel(Z, Z, sigma)
+        T_oh = np.eye(K)[T]
+        n_k = T_oh.sum(axis=0)
+        n_neg = N - n_k
+        T_neg = 1.0 - T_oh
+
+        cross = T_oh.T @ K_full @ T_oh
+        cross_neg = T_oh.T @ K_full @ T_neg
+        cross_neg_neg = T_neg.T @ K_full @ T_neg
+
+        diag_kk = np.diag(cross) / np.maximum(n_k ** 2, 1.0)
+        diag_nn = np.diag(cross_neg_neg) / np.maximum(n_neg ** 2, 1.0)
+        cross_kn = np.diag(cross_neg) / np.maximum(n_k * n_neg, 1.0)
+
+        mmd2_vec = np.maximum(diag_kk + diag_nn - 2.0 * cross_kn, 0.0)
+        return float(np.sqrt(mmd2_vec).sum())
 
     def n_ops(self, K: int) -> int:
         return count_ova_ops(K)

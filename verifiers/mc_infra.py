@@ -1,18 +1,21 @@
-"""Shared Monte Carlo infrastructure for Theorem 3.5 / 3.8 verifiers.
+"""Optimized Monte Carlo infrastructure.
 
-Provides functions to:
-  - Generate resampled datasets
-  - Compute alpha_hat (BOAB estimator) on each
-  - Compute population-level alpha_bd
-  - Measure deviation, variance, and concentration
+Separates fast direct measurements (Var(R_hat_S)) from slow profile computations.
+- Var(R_hat_S) is measured directly across resamples (one imbalance computation each)
+- kappa_S is measured from population profile criterion (once per K)
+- alpha_hat is computed for fewer resamples (for direct verification)
 """
 from __future__ import annotations
 import numpy as np
 
 from src.data import generate_hard_setting
 from src.strategies import get_strategy
-from src.discrepancy import median_heuristic
-from src.boab import complexity_term
+from src.discrepancy import median_heuristic, rbf_kernel
+
+
+def fixed_projection(d: int = 20, seed: int = 0) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    return rng.standard_normal((d, 8)) / np.sqrt(d)
 
 
 def fixed_representation(X: np.ndarray, repr_dim: int = 8, seed: int = 0) -> np.ndarray:
@@ -23,116 +26,150 @@ def fixed_representation(X: np.ndarray, repr_dim: int = 8, seed: int = 0) -> np.
     return np.tanh(X @ W)
 
 
-def compute_profile_criterion(
-    Z: np.ndarray, T: np.ndarray, Y: np.ndarray, K: int,
-    strategy: str, alpha_grid: np.ndarray, sigma: float, n: int,
-    delta: float = 0.05, M: float = 5.0,
-) -> np.ndarray:
-    """Compute Q_hat(alpha) for each alpha in the grid.
+def measure_R_variance(
+    K: int, n: int, strategy: str, n_resamples: int = 200,
+    d: int = 20, seed_base: int = 1000,
+    fixed_sigma: float | None = None,
+) -> dict:
+    """Directly measure variance and std of R_hat_S across resamples.
 
-    Q_hat(alpha) = eps_f(theta_hat(alpha)) + alpha*R_hat_S(theta_hat(alpha)) + Comp(alpha;n,delta)
+    This is fast: one imbalance computation per resample (no profile optimization).
     """
     strat = get_strategy(strategy)
-    T_oh = np.eye(K)[T]
-    design_base = np.hstack([Z, T_oh])
-    d_dim = design_base.shape[1]
+    W = fixed_projection(d, seed=0)
+    if fixed_sigma is None:
+        ref_data = generate_hard_setting(N=1000, K=K, d=d, seed=99998)
+        Xt_ref = np.tanh(ref_data["X"] @ W)
+        fixed_sigma = median_heuristic(Xt_ref)
+    sigma = fixed_sigma
 
-    Q_values = np.zeros(len(alpha_grid))
-    for i, alpha in enumerate(alpha_grid):
-        # Alpha-dependent ridge regression: stronger alpha -> more regularization
-        alpha_reg = 0.01 + alpha * 0.1
+    R_hats = np.zeros(n_resamples)
+    for r in range(n_resamples):
+        data = generate_hard_setting(N=n, K=K, d=d, seed=seed_base + r)
+        Xt = np.tanh(data["X"] @ W)
+        R_hats[r] = strat.imbalance(Xt, data["T"], K, sigma=sigma)
+        if (r + 1) % 100 == 0:
+            from verifiers.common import log
+            log(f"      R measurement {r+1}/{n_resamples} (K={K}, {strategy})")
+
+    return {
+        "K": K, "n": n, "strategy": strategy,
+        "R_hats": R_hats,
+        "R_mean": float(np.mean(R_hats)),
+        "R_std": float(np.std(R_hats)),
+        "R_var": float(np.var(R_hats, ddof=1)),
+        "sigma": float(sigma),
+    }
+
+
+def compute_profile_criterion(
+    X: np.ndarray, T: np.ndarray, Y: np.ndarray,
+    K: int, strategy: str, sigma: float,
+    alpha_grid: np.ndarray, n: int,
+    W: np.ndarray, n_lambdas: int = 10,
+) -> tuple[float, float, np.ndarray]:
+    """Compute profile criterion and return (alpha_hat, R_star_at_alpha, Q_values).
+
+    Uses lambda-parameterized representation: Z_lambda = lambda * tanh(X @ W).
+    For each alpha, finds optimal lambda minimizing eps_F(lambda) + alpha*R_S(lambda).
+    """
+    Xt = np.tanh(X @ W)
+    lambdas = np.linspace(0.1, 2.0, n_lambdas)
+
+    eps_f_arr = np.zeros(n_lambdas)
+    R_arr = np.zeros(n_lambdas)
+    strat = get_strategy(strategy)
+
+    # Precompute kernel matrix base (for sigma scaling)
+    for i, lam in enumerate(lambdas):
+        Z = lam * Xt
+        # eps_F via ridge
+        T_oh = np.eye(K)[T]
+        design = np.hstack([Z, T_oh])
+        dd = design.shape[1]
+        A = design.T @ design + 0.01 * np.eye(dd)
+        b = design.T @ Y
         try:
-            beta = np.linalg.solve(
-                design_base.T @ design_base + alpha_reg * np.eye(d_dim),
-                design_base.T @ Y,
-            )
-            Y_hat = design_base @ beta
-            eps_f = float(np.mean((Y_hat - Y) ** 2))
+            beta = np.linalg.solve(A, b)
+            Y_hat = design @ beta
+            eps_f_arr[i] = float(np.mean((Y_hat - Y) ** 2))
         except np.linalg.LinAlgError:
-            eps_f = 1e6
+            eps_f_arr[i] = 1e6
+        R_arr[i] = strat.imbalance(Z, T, K, sigma=sigma)
 
-        imb = strat.imbalance(Z, T, K, sigma=sigma)
-        comp = complexity_term(alpha, n, delta, M)
-        Q_values[i] = eps_f + alpha * imb + comp
+    # Profile criterion
+    Q_values = np.zeros(len(alpha_grid))
+    R_star = 0.0
+    alpha_hat = alpha_grid[0]
 
-    return Q_values
+    for j, alpha in enumerate(alpha_grid):
+        objectives = eps_f_arr + alpha * R_arr
+        best = int(np.argmin(objectives))
+        comp = 5.0 * np.sqrt(2.0 * np.log(1.0 / 0.05) / n) / (1.0 + alpha)
+        Q_values[j] = eps_f_arr[best] + alpha * R_arr[best] + comp
 
+    best_j = int(np.argmin(Q_values))
+    alpha_hat = float(alpha_grid[best_j])
 
-def compute_alpha_hat(
-    X: np.ndarray, T: np.ndarray, Y: np.ndarray, K: int,
-    strategy: str, alpha_grid: np.ndarray, sigma: float, n: int,
-    delta: float = 0.05, M: float = 5.0, repr_seed: int = 0,
-) -> float:
-    """Compute alpha_hat = argmin Q_hat(alpha)."""
-    Z = fixed_representation(X, repr_dim=8, seed=repr_seed)
-    Q = compute_profile_criterion(Z, T, Y, K, strategy, alpha_grid, sigma, n, delta, M)
-    return float(alpha_grid[int(np.argmin(Q))])
+    # R_star at optimal alpha
+    objectives = eps_f_arr + alpha_hat * R_arr
+    best = int(np.argmin(objectives))
+    R_star = float(R_arr[best])
 
+    # Curvature
+    if 0 < best_j < len(Q_values) - 1:
+        da = alpha_grid[1] - alpha_grid[0]
+        kappa = max((Q_values[best_j + 1] - 2 * Q_values[best_j] + Q_values[best_j - 1]) / (da ** 2), 1e-8)
+    else:
+        kappa = 1.0
 
-def compute_curvature(
-    Q_values: np.ndarray, alpha_grid: np.ndarray,
-) -> float:
-    """Estimate kappa_S = min second derivative of Q(alpha) via finite differences."""
-    if len(Q_values) < 3:
-        return 1.0
-    da = alpha_grid[1] - alpha_grid[0]
-    second_deriv = (Q_values[2:] - 2 * Q_values[1:-1] + Q_values[:-2]) / (da ** 2)
-    kappa = float(np.maximum(second_deriv.min(), 1e-8))
-    return kappa
+    return alpha_hat, R_star, kappa
 
 
 def monte_carlo_alpha_hat(
-    K: int, n: int, strategy: str, alpha_grid: np.ndarray,
-    n_resamples: int = 200, d: int = 20, seed_base: int = 1000,
-    population_n: int = 10000,
+    K: int, n: int, strategy: str,
+    n_resamples: int = 50, d: int = 20, seed_base: int = 1000,
+    population_n: int = 2000,
+    alpha_grid: np.ndarray | None = None,
 ) -> dict:
-    """Monte Carlo study: compute alpha_hat across many resamples.
+    """Monte Carlo: compute alpha_hat for each resample + population alpha_bd."""
+    if alpha_grid is None:
+        alpha_grid = np.linspace(0.0, 5.0, 26)
+    W = fixed_projection(d, seed=0)
 
-    Returns dict with:
-      - alpha_hats: array of alpha_hat values
-      - alpha_bd: population minimizer
-      - deviations: |alpha_hat - alpha_bd|
-      - kappa_S: curvature estimate
-      - r_S: concentration of imbalance
-      - imbalance_hats: array of imbalance values
-    """
-    # Population-level: compute alpha_bd using a very large sample
+    # Precompute sigma once from reference data
+    ref_data = generate_hard_setting(N=1000, K=K, d=d, seed=99998)
+    sigma_ref = median_heuristic(np.tanh(ref_data["X"] @ W))
+
+    # Population level
     pop_data = generate_hard_setting(N=population_n, K=K, d=d, seed=99999)
-    pop_sigma = median_heuristic(pop_data["X"])
-    Z_pop = fixed_representation(pop_data["X"], seed=0)
-    Q_pop = compute_profile_criterion(
-        Z_pop, pop_data["T"], pop_data["Y"], K, strategy,
-        alpha_grid, pop_sigma, population_n,
+    alpha_bd, R_bd, kappa_S = compute_profile_criterion(
+        pop_data["X"], pop_data["T"], pop_data["Y"], K, strategy,
+        sigma_ref, alpha_grid, population_n, W,
     )
-    alpha_bd = float(alpha_grid[int(np.argmin(Q_pop))])
-    kappa_S = compute_curvature(Q_pop, alpha_grid)
 
     # Resamples
     alpha_hats = np.zeros(n_resamples)
-    imbalance_hats = np.zeros(n_resamples)
-    strat = get_strategy(strategy)
-
+    R_stars = np.zeros(n_resamples)
     for r in range(n_resamples):
         data = generate_hard_setting(N=n, K=K, d=d, seed=seed_base + r)
-        Z = fixed_representation(data["X"], seed=0)
-        sigma = median_heuristic(data["X"])
-        Q = compute_profile_criterion(Z, data["T"], data["Y"], K, strategy, alpha_grid, sigma, n)
-        alpha_hats[r] = alpha_grid[int(np.argmin(Q))]
-        imbalance_hats[r] = strat.imbalance(Z, data["T"], K, sigma=sigma)
-        if (r + 1) % 50 == 0:
+        ah, rs, _ = compute_profile_criterion(
+            data["X"], data["T"], data["Y"], K, strategy,
+            sigma_ref, alpha_grid, n, W,
+        )
+        alpha_hats[r] = ah
+        R_stars[r] = rs
+        if (r + 1) % 25 == 0:
             from verifiers.common import log
             log(f"      resample {r+1}/{n_resamples} (K={K}, {strategy})")
 
     deviations = np.abs(alpha_hats - alpha_bd)
-    r_S = float(np.std(imbalance_hats))  # concentration of imbalance
-
     return {
         "K": K, "n": n, "strategy": strategy,
         "alpha_hats": alpha_hats,
         "alpha_bd": alpha_bd,
         "deviations": deviations,
         "kappa_S": kappa_S,
-        "r_S": r_S,
-        "imbalance_hats": imbalance_hats,
-        "Q_pop": Q_pop,
+        "r_S": float(np.std(R_stars)),
+        "R_stars": R_stars,
     }

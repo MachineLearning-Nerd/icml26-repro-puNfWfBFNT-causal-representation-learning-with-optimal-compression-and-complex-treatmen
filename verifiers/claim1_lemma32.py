@@ -390,9 +390,9 @@ def run() -> dict:
 
     save_json(result, "claim1_lemma32/result.json")
     save_csv(
-        [(o["config"], o["alpha"], o["strategy"], o["eps_ite"], o["eps_f"], o["r_S"], o["complexity"])
+        [(o["config"], o.get("repr_dim", o.get("alpha", "?")), o["eps_ite"], o["eps_f"], o["r_S"], o["complexity"])
          for o in observations],
-        ["config", "alpha", "strategy", "eps_ite", "eps_f", "r_S", "complexity"],
+        ["config", "repr_dim_or_alpha", "eps_ite", "eps_f", "r_S", "complexity"],
         "claim1_lemma32/bound_observations.csv",
     )
 

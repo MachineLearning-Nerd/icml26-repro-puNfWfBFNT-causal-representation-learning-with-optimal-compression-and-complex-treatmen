@@ -37,8 +37,10 @@ def generate_hard_setting(
     exp_logits = np.exp(logits)
     propensity = exp_logits / exp_logits.sum(axis=1, keepdims=True)  # (N, K)
 
-    # Sample treatments
-    T = np.array([rng.choice(K, p=propensity[i]) for i in range(N)])
+    # Sample treatments (vectorized)
+    cum_prop = np.cumsum(propensity, axis=1)
+    u = rng.uniform(size=N)
+    T = (cum_prop < u[:, None]).sum(axis=1).astype(int)
 
     # Outcome generation: Y(t) = sin(2*X1) + X3^2 + 0.5*(t+1)*(X_{1:5}^T beta) + eps
     beta = rng.standard_normal(5)
