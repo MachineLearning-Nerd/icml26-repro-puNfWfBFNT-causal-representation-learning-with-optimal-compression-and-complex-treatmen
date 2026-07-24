@@ -1,0 +1,16 @@
+[project]
+name = "punfwfbfnt-repro"
+version = "0.1.0"
+description = "Reproduction of Causal Representation Learning with Optimal Compression under Complex Treatments (arXiv 2603.11907)"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "numpy>=1.26,<2.0",
+    "scipy>=1.11",
+    "scikit-learn>=1.3",
+    "torch>=2.2",
+    "matplotlib>=3.8",
+    "statsmodels>=0.14",
+]
+
+[tool.uv]
+torch-backend = "cpu"
