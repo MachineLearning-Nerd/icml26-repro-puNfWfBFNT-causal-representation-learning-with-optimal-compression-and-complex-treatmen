@@ -26,17 +26,21 @@ def fixed_representation(X: np.ndarray, repr_dim: int = 8, seed: int = 0) -> np.
     return np.tanh(X @ W)
 
 
+def get_fixed_embeddings(K: int, d_e: int = 8, seed: int = 12345) -> np.ndarray:
+    """Fixed random treatment embeddings (K, d_e) — K-independent dimensionality."""
+    rng = np.random.default_rng(seed)
+    return rng.standard_normal((K, d_e))
+
+
 def measure_R_variance(
     K: int, n: int, strategy: str, n_resamples: int = 200,
     d: int = 20, seed_base: int = 1000,
     fixed_sigma: float | None = None,
 ) -> dict:
-    """Directly measure variance and std of R_hat_S across resamples.
-
-    This is fast: one imbalance computation per resample (no profile optimization).
-    """
+    """Directly measure variance and std of R_hat_S across resamples."""
     strat = get_strategy(strategy)
     W = fixed_projection(d, seed=0)
+    emb = get_fixed_embeddings(K)  # Fixed random embeddings for agg
     if fixed_sigma is None:
         ref_data = generate_hard_setting(N=1000, K=K, d=d, seed=99998)
         Xt_ref = np.tanh(ref_data["X"] @ W)
@@ -47,7 +51,11 @@ def measure_R_variance(
     for r in range(n_resamples):
         data = generate_hard_setting(N=n, K=K, d=d, seed=seed_base + r)
         Xt = np.tanh(data["X"] @ W)
-        R_hats[r] = strat.imbalance(Xt, data["T"], K, sigma=sigma)
+        if strategy == "agg":
+            E = emb[data["T"]]  # Map treatments to embeddings
+            R_hats[r] = strat.imbalance(Xt, data["T"], K, sigma=sigma, embeddings=E)
+        else:
+            R_hats[r] = strat.imbalance(Xt, data["T"], K, sigma=sigma)
         if (r + 1) % 100 == 0:
             from verifiers.common import log
             log(f"      R measurement {r+1}/{n_resamples} (K={K}, {strategy})")
@@ -67,6 +75,7 @@ def compute_profile_criterion(
     K: int, strategy: str, sigma: float,
     alpha_grid: np.ndarray, n: int,
     W: np.ndarray, n_lambdas: int = 10,
+    emb: np.ndarray | None = None,
 ) -> tuple[float, float, np.ndarray]:
     """Compute profile criterion and return (alpha_hat, R_star_at_alpha, Q_values).
 
@@ -95,7 +104,11 @@ def compute_profile_criterion(
             eps_f_arr[i] = float(np.mean((Y_hat - Y) ** 2))
         except np.linalg.LinAlgError:
             eps_f_arr[i] = 1e6
-        R_arr[i] = strat.imbalance(Z, T, K, sigma=sigma)
+        if strategy == "agg" and emb is not None:
+            E = emb[T]
+            R_arr[i] = strat.imbalance(Z, T, K, sigma=sigma, embeddings=E)
+        else:
+            R_arr[i] = strat.imbalance(Z, T, K, sigma=sigma)
 
     # Profile criterion
     Q_values = np.zeros(len(alpha_grid))
@@ -140,12 +153,13 @@ def monte_carlo_alpha_hat(
     # Precompute sigma once from reference data
     ref_data = generate_hard_setting(N=1000, K=K, d=d, seed=99998)
     sigma_ref = median_heuristic(np.tanh(ref_data["X"] @ W))
+    emb = get_fixed_embeddings(K)
 
     # Population level
     pop_data = generate_hard_setting(N=population_n, K=K, d=d, seed=99999)
     alpha_bd, R_bd, kappa_S = compute_profile_criterion(
         pop_data["X"], pop_data["T"], pop_data["Y"], K, strategy,
-        sigma_ref, alpha_grid, population_n, W,
+        sigma_ref, alpha_grid, population_n, W, emb=emb,
     )
 
     # Resamples
@@ -155,7 +169,7 @@ def monte_carlo_alpha_hat(
         data = generate_hard_setting(N=n, K=K, d=d, seed=seed_base + r)
         ah, rs, _ = compute_profile_criterion(
             data["X"], data["T"], data["Y"], K, strategy,
-            sigma_ref, alpha_grid, n, W,
+            sigma_ref, alpha_grid, n, W, emb=emb,
         )
         alpha_hats[r] = ah
         R_stars[r] = rs
