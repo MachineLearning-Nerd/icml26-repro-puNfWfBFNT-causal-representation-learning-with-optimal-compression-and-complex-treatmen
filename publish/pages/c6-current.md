@@ -1,7 +1,12 @@
 # Claim 6 (current) — CausalEGM geodesic structure: **VERIFIED** (geodesic-structure assertion)
 
 > Supersedes [C6 (historical)](#/claims/c6-hist).
-> Current code: `verifiers/claim6_geodesic_fixed.py`, `src/cfr_fixed.py` at Git SHA `aced657`.
+> Current code: `verifiers/claim6_geodesic_fixed.py`, `src/cfr_fixed.py` at Git SHA `7771abc`.
+> Compute: Hugging Face `cpu-upgrade`, image `python:3.12`. Estimated 4–8 cores required;
+> actual allocation **8 vCPU** (cgroup quota; the container reports `os.cpu_count()=64`, hence
+> the thread pinning in `src/threads.py`). torch 2.13.0+cpu. **No GPU was used.**
+> Results are bit-reproducible: three independent HF runs returned
+> `cycle_dist_geo_corr = 0.9677749026847287` identically.
 
 ---
 <!-- trackio-cell
