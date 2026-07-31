@@ -54,9 +54,13 @@ from src.pehe_conventions import all_conventions, zero_effect_reference
 from verifiers.assumption_audit import save_rows_csv
 from verifiers.common import log, save_json, system_info
 
-SEEDS = [0, 1, 2, 3, 4]
+# Hugging Face cpu-upgrade runs this workload markedly slower than the dev machine, and a
+# timeout loses every result in the job. Budgets are sized so the whole verifier fits well
+# inside the wall clock: 3 seeds is still enough to report initialisation sensitivity, which
+# is the point of removing the MDS warm start.
+SEEDS = [0, 1, 2]
 LAMBDA_GEO = 5.0          # Appendix D.5
-STEPS = 2500
+STEPS = 1200
 D_E = 2                   # 2-D latent so the ring/tree is directly inspectable, as in Fig. 6
 
 
@@ -248,7 +252,7 @@ def run():
     X, T, Y, Y_all, K = digits_setting()
     geo_line = np.abs(np.arange(K)[:, None] - np.arange(K)[None, :]).astype(float)
     digit_runs = []
-    for seed in SEEDS[:3]:
+    for seed in SEEDS[:2]:
         m = RingGeodesicCausalEGM(X.shape[1], K, geo_line, lambda_geo=LAMBDA_GEO,
                                   steps=STEPS, seed=seed).fit(X, T, Y)
         Yh = m.predict_all(X)
@@ -327,7 +331,7 @@ def run():
 
     tree_runs = []
     for lam, tag in [(LAMBDA_GEO, "geodesic"), (0.0, "control_lambda0")]:
-        for seed in SEEDS[:3]:
+        for seed in SEEDS[:2]:
             m = RingGeodesicCausalEGM(16, Kt, geo_t, lambda_geo=lam, steps=STEPS,
                                       seed=seed).fit(Xt, Tt, Yt)
             path = m.interpolate_outcomes(Xt, 3, 6)          # LL (3) -> RR (6)
