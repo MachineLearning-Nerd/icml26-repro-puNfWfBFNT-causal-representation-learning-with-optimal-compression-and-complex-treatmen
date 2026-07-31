@@ -175,6 +175,18 @@ class ExactProfile:
         """R_S(gamma_hat(alpha)) -- also equals P'(alpha) by the envelope identity."""
         return sum(float((b["s"] * b["m"]) @ (u ** 2)) for b, u in zip(self._blocks, self._u(alpha)))
 
+    def coef_norm_sq(self, alpha):
+        """sum_t ||gamma_hat_t(alpha)||^2 -- the estimator's own squared coefficient norm.
+
+        gamma_hat_t = B (u * Bc) in the whitened basis, so ||gamma_hat_t||^2 = (u*Bc)^T B^T B
+        (u*Bc).  Used as the data-determined radius of the norm ball in H_alpha.
+        """
+        tot = 0.0
+        for b, u in zip(self._blocks, self._u(alpha)):
+            g = b["B"] @ (u * b["Bc"])
+            tot += float(g @ g)
+        return tot
+
     def factual_risk(self, alpha):
         """eps_F(gamma_hat(alpha)) alone, i.e. the profile term minus alpha*R."""
         return self.profile(alpha) - alpha * self.imbalance(alpha)
