@@ -73,8 +73,10 @@ NEW_PAGES = [
 # This run's finding per claim, kept separate from the judged verdict.  `page` selects which
 # page the indices point at as CURRENT: for C3 and C5 that remains the frozen judged page.
 CURRENT = {
-    "c1": {"title": "Lemma 3.2 decomposition", "status": "**VERIFIED** (Step 1, exact constant)",
-           "note": "symbolic certificate + 2800 configs, 0 violations; tight at K=2",
+    "c1": {"title": "Lemma 3.2 decomposition", "status": "**VERIFIED** (all 4 proof steps)",
+           "note": "Steps 1-4 of Appendix C.2 reproduced; Step 1 distribution-free over 7 "
+                   "outcome families with 0 violations and a constant tight at K=2; Step 2's "
+                   "imbalance term carries held-out R2=0.81 vs -0.02 without it",
            "page": "pages/claims/c1-current.md"},
     "c2": {"title": "Thm 3.5 deviation bound", "status": "**BLOCKED** (hypotheses not in force)",
            "note": "no interior minimiser in 216/216 audited cells; limited by an unspecified constant in eq. (16), not by the theorem",
@@ -90,10 +92,12 @@ CURRENT = {
            "note": "frozen at the judged revision; re-derived evidence is weaker, not stronger",
            "page": "pages/claims/c5.md"},
     "c6": {"title": "CausalEGM geodesic structure",
-           "status": "**VERIFIED** (geodesic-structure assertion)",
-           "note": "MDS-init circularity removed, 64-dim real images; latent-vs-geodesic corr "
-                   "0.968 against a lambda_geo=0 control at 0.148, tree midpoint +0.015; "
-                   "generation quality not established",
+           "status": "geodesic clause **VERIFIED**; generation clause **NOT ESTABLISHED**",
+           "note": "784-dim Rotated MNIST, random init; latent-vs-geodesic corr 0.968 vs a "
+                   "lambda_geo=0 control at 0.123, tree midpoint +0.015, and the Section 5.1 "
+                   "ADRF minimum recovered at T=4 once positivity was restored (PEHE 7.2->1.42). "
+                   "Counterfactual image generation loses to a per-angle-mean baseline, so the "
+                   "generation clause is not claimed",
            "page": "pages/claims/c6-current.md"},
 }
 

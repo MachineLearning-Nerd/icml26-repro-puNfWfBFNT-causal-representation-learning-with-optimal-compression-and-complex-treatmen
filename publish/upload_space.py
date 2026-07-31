@@ -96,8 +96,12 @@ def main():
     if not token:
         raise SystemExit("no cached HF token")
     api = HfApi()
-    who = api.whoami(token=token)
-    print(f"authenticated as {who.get('name')}")   # never print the token
+    # Cosmetic only -- /whoami-v2 is aggressively rate-limited and must never block a publish
+    # whose gates have already passed.  The upload itself authenticates independently.
+    try:
+        print(f"authenticated as {api.whoami(token=token).get('name')}")  # never print token
+    except Exception as e:
+        print(f"whoami unavailable ({type(e).__name__}); proceeding -- upload authenticates itself")
 
     api.upload_folder(
         repo_id=REPO_ID, repo_type="space", folder_path=args.candidate_dir,
