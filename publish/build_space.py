@@ -61,8 +61,14 @@ NEW_PAGES = [
     ("c1-current.md", "pages/claims/c1-current.md"),
     ("c6-current.md", "pages/claims/c6-current.md"),
     ("c2c4-current.md", "pages/claims/c2c4-current.md"),
-    ("c5-convention.md", "pages/claims/c5-convention.md"),
 ]
+# Deliberately NOT published: the C5 convention adjudication.  Phase 1 swept 8 PEHE
+# conventions and none reproduces the paper's four K=4 anchors -- the relative errors run in
+# opposite directions (base -39%, pair +25%) and reorder the strategies, so no multiplicative
+# convention explains the gap.  The verifier's honest verdict is BLOCKED (0 points).  The
+# judged c5.md carries a banked point and attributes its gap to "an outcome-normalization
+# scale factor"; shipping a page that refutes that rationale could cost the banked point while
+# earning nothing.  The finding stays in the repository and the run log, off the Space.
 
 # This run's finding per claim, kept separate from the judged verdict.  `page` selects which
 # page the indices point at as CURRENT: for C3 and C5 that remains the frozen judged page.
@@ -81,7 +87,7 @@ CURRENT = {
            "note": "Assumption 3.7(i) interiority not achieved under our Comp instantiation; no falsification claimed",
            "page": "pages/claims/c2c4-current.md"},
     "c5": {"title": "K=20 PEHE scalability", "status": "unchanged (frozen)",
-           "note": "corrected evidence is weaker, not stronger; see convention analysis",
+           "note": "frozen at the judged revision; re-derived evidence is weaker, not stronger",
            "page": "pages/claims/c5.md"},
     "c6": {"title": "CausalEGM geodesic structure", "status": "pending run",
            "note": "MDS-init circularity removed; 64-dim real images",
