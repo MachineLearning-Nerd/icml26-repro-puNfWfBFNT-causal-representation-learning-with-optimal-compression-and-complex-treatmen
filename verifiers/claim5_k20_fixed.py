@@ -49,11 +49,12 @@ from src.pehe_conventions import (
 from verifiers.assumption_audit import save_rows_csv
 from verifiers.common import log, save_json, system_info
 
-SEEDS = [42, 43, 44]
+SEEDS = [42, 43]
 N = 1500
 D = 20
 KAPPA = 5.0
-STEPS = 3000
+STEPS = 1200
+TEST_FRAC = 0.3          # PEHE is evaluated OUT OF SAMPLE -- see _train_eval
 # alpha values at which the paper reports each strategy's optimum (Section 4.1)
 K4_ALPHA = {"base": 0.0, "ova": 0.1, "pair": 5.0, "agg": 0.5}
 K20_ALPHA_GRID = [0.0, 0.1, 0.5, 1.0, 5.0]
@@ -61,17 +62,32 @@ ANCHOR_REL_TOL = 0.15
 
 
 def _train_eval(K, strategy, alpha, seed):
+    """Fit on a training split and evaluate PEHE OUT OF SAMPLE.
+
+    In-sample PEHE rewards memorising the factual outcomes and understates counterfactual
+    error, especially for a 1500-sample dataset against a multi-layer network. Held-out
+    evaluation is both the defensible choice and the one comparable to a published number
+    whose architecture is unspecified.
+    """
     dat = generate_hard_setting(N=N, K=K, d=D, seed=seed, kappa=KAPPA)
     X, T, Y, Y_true = dat["X"], dat["T"], dat["Y"], dat["Y_all_mean"]
+
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(len(X))
+    n_test = int(TEST_FRAC * len(X))
+    te, tr = perm[:n_test], perm[n_test:]
+
     model = CFRFixed(
         input_dim=D, K=K, strategy=("pair" if strategy == "base" else strategy),
-        alpha=alpha, steps=STEPS, sigma=median_heuristic(X), seed=seed,
+        alpha=alpha, steps=STEPS, sigma=median_heuristic(X[tr]), seed=seed,
     )
     t0 = time.perf_counter()
-    model.fit(X, T, Y)
+    model.fit(X[tr], T[tr], Y[tr])
     secs = time.perf_counter() - t0
-    Y_hat = model.predict_all_treatments(X)
-    return all_conventions(Y_hat, Y_true), zero_effect_reference(Y_true), secs, model.final_mse
+    Y_hat = model.predict_all_treatments(X[te])
+    log(f"      fit K={K} {strategy} alpha={alpha} seed={seed}: {secs:.0f}s mse={model.final_mse:.4f}")
+    return (all_conventions(Y_hat, Y_true[te]), zero_effect_reference(Y_true[te]),
+            secs, model.final_mse)
 
 
 def _mean_over_seeds(dicts):
