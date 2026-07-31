@@ -10,7 +10,25 @@ dependencies = [
     "torch>=2.2",
     "matplotlib>=3.8",
     "statsmodels>=0.14",
+    "sympy>=1.14.0",
 ]
 
 [tool.uv]
 torch-backend = "cpu"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+# Force CPU-only torch wheels. The `torch-backend` key above is not honoured by every uv
+# version, and the Hugging Face jobs were pulling the full CUDA stack (nvidia-cublas, cudnn,
+# triton, ~3GB) onto CPU-only containers -- wasted download time and an oversubscribed
+# thread pool. An explicit index is portable across uv versions.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
