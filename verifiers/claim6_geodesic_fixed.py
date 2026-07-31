@@ -50,6 +50,7 @@ import torch.nn as nn
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.cf_generator import CounterfactualGenerator, treatment_decodability
 from src.pehe_conventions import all_conventions, zero_effect_reference
 from verifiers.assumption_audit import save_rows_csv
 from verifiers.common import log, save_json, system_info
@@ -59,6 +60,11 @@ from verifiers.common import log, save_json, system_info
 # inside the wall clock: 3 seeds is still enough to report initialisation sensitivity, which
 # is the point of removing the MDS warm start.
 SEEDS = [0, 1, 2]
+CONFOUND_STRENGTH = 2.0   # logit bonus on a unit's own digit class; bounded => overlap holds
+GEN_N_PER = 600           # base images for the generation benchmark (one factual angle each)
+GEN_STEPS = 1500
+LAMBDA_BAL_GRID = [5.0, 20.0, 50.0, 150.0]   # swept; selected on decodability, not on MSE
+DECOD_TOL = 0.08          # "chance-level" tolerance for angle decodability
 LAMBDA_GEO = 5.0          # Appendix D.5
 STEPS = 1200
 D_E = 2                   # 2-D latent so the ring/tree is directly inspectable, as in Fig. 6
@@ -183,25 +189,62 @@ def digits_setting(seed=0):
     fX = np.tanh(X @ w / np.sqrt(X.shape[1]))
     t_eff = (np.arange(K) - 4.0) ** 2
     Y_all = fX[:, None] + t_eff[None, :]
-    # Treatment = digit class, which is confounded with X by construction.
-    T = dg.target.astype(int)
+
+    # Treatment assignment must be CONFOUNDED (that is the point) but must also satisfy
+    # OVERLAP, which Assumption 3.1 requires alongside unconfoundedness.  The previous version
+    # used T = dg.target, i.e. the digit class -- a *deterministic* function of X, so
+    # P(T=t|X) was 0 or 1 and positivity failed outright.  Under a positivity violation no
+    # estimator can recover the counterfactuals, which is why the ADRF minimum was not
+    # recovered and PEHE stalled at ~7.  Here treatment is drawn from a softmax in the digit
+    # class (retaining the confounding) with the logit scale capped so every treatment keeps
+    # positive probability for every unit.  The realised minimum propensity is returned as
+    # evidence that overlap actually holds rather than being assumed.
+    cls = dg.target.astype(int)
+    logits = np.zeros((len(X), K))
+    logits[np.arange(len(X)), cls] = CONFOUND_STRENGTH        # bounded => bounded propensity
+    logits += 0.5 * fX[:, None]
+    p = np.exp(logits - logits.max(1, keepdims=True))
+    p /= p.sum(1, keepdims=True)
+    T = np.array([rng.choice(K, p=pi) for pi in p])
     Y = Y_all[np.arange(len(X)), T] + rng.normal(0, 0.1, len(X))
-    return X, T, Y, Y_all, K
+    return X, T, Y, Y_all, K, float(p.min())
 
 
-def rotated_digit_setting(seed=0, K=8, n_per=140):
+def _mnist_threes():
+    """Appendix D.5's actual data source: Rotated MNIST, base image a handwritten '3'.
+
+    Raises rather than falling back to a lower resolution.  A silent downgrade would produce
+    evidence labelled 784-dim that is not, which is worse than no evidence at all.
+    """
+    from sklearn.datasets import fetch_openml
+
+    d = fetch_openml("mnist_784", version=1, as_frame=False, parser="liac-arff")
+    X = np.asarray(d.data, dtype=float)
+    y = np.asarray(d.target).astype(str)
+    threes = X[y == "3"]
+    if threes.shape[1] != 784 or len(threes) < 100:
+        raise RuntimeError(f"unexpected MNIST shape {threes.shape}")
+    return threes.reshape(-1, 28, 28) / 255.0
+
+
+def rotated_digit_setting(seed=0, K=8, n_per=140, resolution="mnist784"):
     """Appendix D.4/D.5: rotations of a handwritten digit, cyclic C_8, Y = cos(theta).
 
-    DEVIATION FROM PAPER, STATED EXPLICITLY: the paper uses Rotated MNIST (28x28 = 784-dim).
-    To keep the run dependency-free and CPU-cheap this uses the sklearn digits '3' images
-    (8x8 = 64-dim) rotated by the same angles. The topology, outcome mechanism and cyclic
-    structure are identical; only the image resolution differs.
+    `resolution="mnist784"` is the paper's setting: Rotated MNIST, 28x28 = 784-dim, base
+    image a handwritten '3'.  `resolution="digits64"` is the 8x8 sklearn-digits variant, kept
+    only as a resolution ablation so the effect of scale can be reported rather than assumed.
     """
     from scipy.ndimage import rotate as ndrotate
-    from sklearn.datasets import load_digits
 
-    dg = load_digits()
-    threes = dg.data[dg.target == 3].reshape(-1, 8, 8)
+    if resolution == "mnist784":
+        threes = _mnist_threes()
+    elif resolution == "digits64":
+        from sklearn.datasets import load_digits
+
+        dg = load_digits()
+        threes = dg.data[dg.target == 3].reshape(-1, 8, 8) / 16.0
+    else:
+        raise ValueError(resolution)
     rng = np.random.default_rng(seed)
     angles = np.arange(K) * (360.0 / K)
 
@@ -221,7 +264,10 @@ def rotated_digit_setting(seed=0, K=8, n_per=140):
     offs = rng.normal(0, 0.2, n_per)
     Y_all = np.stack([np.cos(np.deg2rad(angles))] * len(X), axis=0) + offs[base_idx][:, None]
     Y = Y_all[np.arange(len(X)), T] + rng.normal(0, 0.05, len(X))
-    return X, T, Y, Y_all, K, angles
+    # base_idx identifies which source image each row came from, so every unit is present at
+    # all K angles.  That makes the true counterfactual IMAGE available by construction, which
+    # is what the generation benchmark in Part D scores against.
+    return X, T, Y, Y_all, K, angles, base_idx
 
 
 # ---------------------------------------------------------------------------------------
@@ -249,7 +295,9 @@ def run():
 
     # -- Part A: Section 5.1 high-dimensional Digits setting -----------------------------
     log("Part A: Section 5.1 UCI Digits (N=1797, 64-dim, K=10)")
-    X, T, Y, Y_all, K = digits_setting()
+    X, T, Y, Y_all, K, min_prop = digits_setting()
+    log(f"  overlap: min_t P(T=t|X) = {min_prop:.4f} over all units "
+        f"(previous version used T=digit class, giving 0 -- positivity violated)")
     geo_line = np.abs(np.arange(K)[:, None] - np.arange(K)[None, :]).astype(float)
     digit_runs = []
     for seed in SEEDS[:2]:
@@ -269,11 +317,12 @@ def run():
         "adrf_min_at_4_all_seeds": all(r["adrf_argmin"] == 4 for r in digit_runs),
         "zero_effect_reference": zero_effect_reference(Y_all),
         "paper_anchor_pehe_causalegm": 0.65,
+        "min_propensity": min_prop,
     }
 
     # -- Part B: Appendix D.5 cyclic rotation setting ------------------------------------
     log("Part B: Appendix D.5 rotated-digit cyclic manifold (K=8, Y=cos(theta))")
-    Xr, Tr, Yr, Yr_all, Kr, angles = rotated_digit_setting()
+    Xr, Tr, Yr, Yr_all, Kr, angles, base_idx = rotated_digit_setting()
     geo_c = cycle_geodesic(Kr)
     log(f"  data: {Xr.shape[0]} samples x {Xr.shape[1]} dims")
 
@@ -350,6 +399,76 @@ def run():
             f"dwell near root={np.mean([r['dwell_frac_near_root'] for r in sel]):.2f}")
     out["tree"] = {"runs": tree_runs, "linear_baseline_midpoint": 0.0}
 
+    # -- Part D: high-dimensional counterfactual IMAGE generation ------------------------
+    # The first clause of the claim ("extends ... to high-dimensional counterfactual
+    # generation") was not established by the 2026-07-31 evidence.  Measure it directly.
+    log("Part D: counterfactual image generation on 784-dim Rotated MNIST")
+    Xg, _, _, _, Kg, _, bidx = rotated_digit_setting(seed=0, n_per=GEN_N_PER)
+    grid = Xg.reshape(GEN_N_PER, Kg, -1)          # [base image, angle, pixels] -- ground truth
+    rng_g = np.random.default_rng(20260731)
+    # Each base image is OBSERVED at exactly one angle; the other K-1 are never shown.
+    t_obs = rng_g.integers(0, Kg, GEN_N_PER)
+    X_fact = grid[np.arange(GEN_N_PER), t_obs]
+    log(f"  {GEN_N_PER} units x {Kg} angles, {grid.shape[2]}-dim; "
+        f"{GEN_N_PER} factual images seen, {GEN_N_PER * (Kg - 1)} counterfactuals held out")
+
+    # Baselines that need no model at all, so "it generated something" cannot pass as success.
+    cf_mask = np.ones((GEN_N_PER, Kg), bool)
+    cf_mask[np.arange(GEN_N_PER), t_obs] = False
+    truth = grid[cf_mask].reshape(GEN_N_PER, Kg - 1, -1)
+    identity = np.repeat(X_fact[:, None, :], Kg - 1, axis=1)
+    mse_identity = float(np.mean((identity - truth) ** 2))
+    mean_img = np.stack([X_fact[t_obs == t].mean(0) if (t_obs == t).any() else X_fact.mean(0)
+                         for t in range(Kg)])
+    mean_pred = np.stack([mean_img[[t for t in range(Kg) if t != ti]] for ti in t_obs])
+    mse_mean = float(np.mean((mean_pred - truth) ** 2))
+    log(f"  baselines: copy-input MSE={mse_identity:.5f}  per-angle-mean MSE={mse_mean:.5f}")
+
+    # lambda_bal is selected on a TRAINING-SIDE diagnostic only: the smallest value that drives
+    # the angle out of the content code (decodability within DECOD_TOL of chance).  It is NOT
+    # selected on the counterfactual MSE, which is the quantity under test -- doing that would
+    # be fitting the hyperparameter to the benchmark.  The whole sweep is reported either way.
+    log("  selecting lambda_bal on angle-decodability (NOT on counterfactual MSE)")
+    sweep, chance = [], 1.0 / Kg
+    for lam in LAMBDA_BAL_GRID:
+        gs = CounterfactualGenerator(grid.shape[2], Kg, lambda_bal=lam,
+                                     steps=GEN_STEPS, seed=SEEDS[0]).fit(X_fact, t_obs)
+        d = treatment_decodability(gs.codes(X_fact), t_obs)
+        sweep.append({"lambda_bal": lam, "decodability": d, "final_rec": gs.final_rec})
+        log(f"    lambda_bal={lam:6.1f}: decodability={d:.3f} (chance {chance:.3f}) "
+            f"rec={gs.final_rec:.5f}")
+    ok = [s for s in sweep if s["decodability"] <= chance + DECOD_TOL]
+    lam_sel = min(s["lambda_bal"] for s in ok) if ok else max(LAMBDA_BAL_GRID)
+    log(f"  selected lambda_bal={lam_sel} "
+        f"({'smallest reaching chance-level decodability' if ok else 'none reached chance; using max'})")
+    out["lambda_selection"] = {"sweep": sweep, "selected": lam_sel,
+                               "criterion": "min lambda with angle decodability <= chance + "
+                                            f"{DECOD_TOL}", "chance": chance}
+
+    gen_runs = []
+    for lam, tag in ((lam_sel, "balanced"), (0.0, "control_lambda0")):
+        per_seed = []
+        for seed in SEEDS[:2]:
+            gm = CounterfactualGenerator(grid.shape[2], Kg, lambda_bal=lam,
+                                         steps=GEN_STEPS, seed=seed).fit(X_fact, t_obs)
+            preds = np.stack([gm.generate(X_fact, t) for t in range(Kg)], axis=1)
+            mse = float(np.mean((preds[cf_mask].reshape(GEN_N_PER, Kg - 1, -1) - truth) ** 2))
+            dec = treatment_decodability(gm.codes(X_fact), t_obs)
+            per_seed.append({"seed": seed, "cf_mse": mse, "angle_decodability": dec,
+                             "final_rec": gm.final_rec, "final_hsic": gm.final_hsic})
+            rows.append({"part": f"gen_{tag}", "seed": seed, "cf_mse": mse,
+                         "angle_decodability": dec})
+        m = float(np.mean([r["cf_mse"] for r in per_seed]))
+        d = float(np.mean([r["angle_decodability"] for r in per_seed]))
+        gen_runs.append({"tag": tag, "lambda_bal": lam, "cf_mse": m, "decodability": d,
+                         "runs": per_seed})
+        log(f"  {tag:16s}: counterfactual MSE={m:.5f}  angle decodability={d:.3f} "
+            f"(chance {1.0 / Kg:.3f})")
+    out["generation"] = {"runs": gen_runs, "mse_identity": mse_identity,
+                         "mse_mean_image": mse_mean, "chance_decodability": chance,
+                         "n_units": GEN_N_PER, "input_dim": int(grid.shape[2]),
+                         "lambda_bal_selected": lam_sel}
+
     # -- Verdict --------------------------------------------------------------------------
     g, c = out["cycle_geodesic"], out["cycle_control_lambda0"]
     checks = {
@@ -383,11 +502,30 @@ def run():
     #       this and reports the value regardless.
     #   tree_control_dwell_lower, cycle_boundary_ok_frac, cycle_monotone_0_to_180 -- the
     #       lambda_geo=0 control attains these too, so they carry no evidence either way.
-    DIAGNOSTIC_ONLY = ("digits_adrf_min_at_T4", "tree_control_dwell_lower")
+    DIAGNOSTIC_ONLY = ("tree_control_dwell_lower",)
+    gb = next(r for r in gen_runs if r["tag"] == "balanced")
+    gc = next(r for r in gen_runs if r["tag"] == "control_lambda0")
+    checks["gen_cf_mse"] = gb["cf_mse"]
+    checks["gen_control_cf_mse"] = gc["cf_mse"]
+    checks["gen_beats_copy_input"] = bool(gb["cf_mse"] < mse_identity)
+    checks["gen_beats_mean_image"] = bool(gb["cf_mse"] < mse_mean)
+    checks["gen_beats_control"] = bool(gb["cf_mse"] < gc["cf_mse"])
+    checks["gen_angle_decodability"] = gb["decodability"]
+    checks["input_dim"] = int(grid.shape[2])
+
+    # digits_adrf_min_at_T4 now GATES again: the reason it failed before was a positivity
+    # violation in our own Section 5.1 setup (T was a deterministic function of X), not a
+    # property of the claim.  With overlap restored the check is a fair test, so it is no
+    # longer excluded -- the earlier scoping is retired rather than relied upon.
     passed = (
         checks["cycle_dist_geo_corr"] > 0.9
         and checks["control_is_worse"]
         and checks["tree_midpoint_near_zero"]
+        and checks["input_dim"] == 784
+        and checks["digits_adrf_min_at_T4"]
+        and checks["gen_beats_copy_input"]
+        and checks["gen_beats_mean_image"]
+        and checks["gen_beats_control"]
     )
     # control_is_worse is evidence FOR the claim, so it must never route to FALSIFIED.  Without
     # a working negative control the instrument is unvalidated and nothing can be concluded.
@@ -398,13 +536,14 @@ def run():
     else:
         verdict = "FALSIFIED"
     reason = (
-        "Randomly initialised (no MDS warm start), on 64-dim real image covariates: latent "
-        "distance tracks C_8 geodesic distance at corr={:.3f} while the lambda_geo=0 control "
-        "reaches only {:.3f}, and the tree midpoint sits at Y~0. Scored on the geodesic-"
-        "structure assertion only; the Digits ADRF argmin probe failed and is reported as a "
-        "diagnostic, and high-dimensional counterfactual GENERATION quality is not established "
-        "(PEHE(rms)~7.2-7.5)."
-        .format(checks["cycle_dist_geo_corr"], checks["control_dist_geo_corr"])
+        "On the paper's own 784-dim Rotated MNIST, randomly initialised (no MDS warm start): "
+        "latent distance tracks C_8 geodesic distance at corr={:.3f} vs {:.3f} for the "
+        "lambda_geo=0 control, and the tree midpoint sits at Y~0. Counterfactual IMAGE "
+        "generation beats copy-input, per-angle-mean and the lambda_bal=0 control "
+        "(MSE {:.5f} vs {:.5f}/{:.5f}/{:.5f}), establishing the high-dimensional generation "
+        "clause. The Section 5.1 ADRF minimum is recovered at T=4 once overlap is restored."
+        .format(checks["cycle_dist_geo_corr"], checks["control_dist_geo_corr"],
+                checks["gen_cf_mse"], mse_identity, mse_mean, checks["gen_control_cf_mse"])
         if passed else
         f"checks: {checks}"
     )

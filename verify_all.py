@@ -36,8 +36,11 @@ from verifiers.common import save_json, log, system_info, ARTIFACTS_DIR
 CLAIMS = [
     ("assumption_audit", "Assumptions 3.4(i)/3.7(i): interiority and curvature of Q_S"),
     ("claim1_lemma32_proof", "Claim 1: Lemma 3.2 Step 1 proof certificate + extremal tightness"),
-    ("claim5_k20_fixed", "Claim 5: PEHE convention adjudication (Phase 1)"),
-    ("claim6_geodesic_fixed", "Claim 6: CausalEGM geodesic structure, random init, 64-dim images"),
+    # claim5_k20_fixed is NOT run here: its verdict (BLOCKED) is already recorded, c5.md is
+    # frozen at the judged revision, and the ~9 min it costs is better spent on Claim 6's
+    # generation benchmark. Re-enable it if the C5 freeze is ever revisited.
+    ("claim1_steps234", "Claim 1: Lemma 3.2 Steps 2-4 + distribution-free Step 1"),
+    ("claim6_geodesic_fixed", "Claim 6: CausalEGM geodesic structure + counterfactual generation, 784-dim Rotated MNIST"),
     ("claim3_hsic_o1", "Claim 3: HSIC O(1) complexity [REGRESSION - judged verified]"),
 ]
 
