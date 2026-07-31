@@ -22,7 +22,7 @@ from verifiers.common import save_json, log, system_info, ARTIFACTS_DIR
 # previously judged run measured them in cells where it fails.  Claim 3 re-runs unchanged as
 # the cumulative regression check for the one already-verified claim.
 CLAIMS = [
-    ("assumption_audit", "Assumptions 3.4(i)/3.7(i): interiority and curvature of Q_S"),
+    ("claim5_k20_fixed", "Claim 5: K=20 pairwise instability vs aggregation stability"),
     ("claim3_hsic_o1", "HSIC O(1) complexity + K-independent deviation [REGRESSION]"),
 ]
 
