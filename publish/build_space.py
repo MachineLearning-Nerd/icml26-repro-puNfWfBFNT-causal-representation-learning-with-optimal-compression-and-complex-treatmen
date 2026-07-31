@@ -156,7 +156,7 @@ def build_indices(out_dir, current):
         )
         if cur["page"] != f"pages/claims/{cid}.md":
             rows_hist.append(
-                f"| [{cid.upper()} — historical rejected baseline](#/claims/{cid}) "
+                f"| [{cid.upper()} — historical rejected baseline](#/claims/{cid}-hist) "
                 f"| superseded by [{slug}](#/claims/{slug}) |"
             )
         tree.append({"slug": slug,
@@ -224,7 +224,7 @@ Current verification first; superseded pages are preserved below and clearly lab
 
 {header}
 
-## Superseded — historical rejected baseline
+## Superseded — [historical rejected baseline](#/claims/historical)
 
 Retained unchanged for provenance. These are **not** the current verifiers.
 

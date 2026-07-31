@@ -1,6 +1,6 @@
 # Claims 2 & 4 (current) — Theorem 3.5 and Theorem 3.8 / Corollary 3.9: **BLOCKED**
 
-> Supersedes [C2 (historical)](#/claims/c2) and [C4 (historical)](#/claims/c4).
+> Supersedes [C2 (historical)](#/claims/c2-hist) and [C4 (historical)](#/claims/c4-hist).
 > Current code: `verifiers/assumption_audit.py`, `src/profile_exact.py` at Git SHA `ca1b900`.
 
 ---

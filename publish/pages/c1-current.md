@@ -1,6 +1,6 @@
 # Claim 1 (current verification) — Lemma 3.2, derived not fitted
 
-> **This page supersedes [C1 (historical rejected baseline)](#/claims/c1).**
+> **This page supersedes [C1 (historical rejected baseline)](#/claims/c1-hist).**
 > The superseded page fitted the constants `C_F=0.82, C_B=0.01, C_C=0.01` numerically.
 > Current code: `verifiers/claim1_lemma32_proof.py` at Git SHA `5d6bdf5`.
 
