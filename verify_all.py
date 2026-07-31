@@ -16,13 +16,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from verifiers.common import save_json, log, system_info, ARTIFACTS_DIR
 
+# This node (orx/closed-form-profile) tests one decision: does the profile criterion of
+# eq. (8)/(9) admit an INTERIOR minimiser with positive curvature -- i.e. do Assumptions
+# 3.4(i) and 3.7(i) actually hold?  Theorems 3.5 and 3.8 are conditional on that, and the
+# previously judged run measured them in cells where it fails.  Claim 3 re-runs unchanged as
+# the cumulative regression check for the one already-verified claim.
 CLAIMS = [
-    ("claim1_lemma32", "Lemma 3.2: Multi-treatment generalization bound"),
-    ("claim2_theorem35", "Theorem 3.5: Finite-sample deviation bound"),
-    ("claim3_hsic_o1", "HSIC O(1) complexity + K-independent deviation"),
-    ("claim4_theorem38", "Theorem 3.8/Cor 3.9: Asymptotic normality + variance scaling"),
-    ("claim5_k20_pehe", "K=20 scalability: pairwise unstable, aggregation stable"),
-    ("claim6_causalegm", "CausalEGM Wasserstein geodesic interpolation"),
+    ("assumption_audit", "Assumptions 3.4(i)/3.7(i): interiority and curvature of Q_S"),
+    ("claim3_hsic_o1", "HSIC O(1) complexity + K-independent deviation [REGRESSION]"),
 ]
 
 
