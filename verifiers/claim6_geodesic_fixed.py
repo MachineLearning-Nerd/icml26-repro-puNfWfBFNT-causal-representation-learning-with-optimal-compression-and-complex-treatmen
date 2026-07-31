@@ -50,7 +50,7 @@ import torch.nn as nn
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.cf_generator import CounterfactualGenerator, treatment_decodability
+from src.cf_generator import ConvCounterfactualGenerator, treatment_decodability
 from src.pehe_conventions import all_conventions, zero_effect_reference
 from verifiers.assumption_audit import save_rows_csv
 from verifiers.common import log, save_json, system_info
@@ -61,10 +61,10 @@ from verifiers.common import log, save_json, system_info
 # is the point of removing the MDS warm start.
 SEEDS = [0, 1, 2]
 CONFOUND_STRENGTH = 2.0   # logit bonus on a unit's own digit class; bounded => overlap holds
-GEN_N_PER = 600           # base images for the generation benchmark (one factual angle each)
-GEN_STEPS = 1500
-LAMBDA_BAL_GRID = [5.0, 20.0, 50.0, 150.0]   # swept; selected on decodability, not on MSE
-DECOD_TOL = 0.08          # "chance-level" tolerance for angle decodability
+GEN_N_PER = 1500          # base images for the generation benchmark (one factual angle each)
+GEN_N_VAL = 250           # units reserved for hyperparameter selection
+GEN_STEPS = 2000
+GEN_GRID = [(5.0, 1.0), (5.0, 3.0), (2.0, 2.0), (10.0, 1.0)]   # (lambda_bal, lambda_cyc)
 LAMBDA_GEO = 5.0          # Appendix D.5
 STEPS = 1200
 D_E = 2                   # 2-D latent so the ring/tree is directly inspectable, as in Fig. 6
@@ -415,55 +415,79 @@ def run():
     # Baselines that need no model at all, so "it generated something" cannot pass as success.
     cf_mask = np.ones((GEN_N_PER, Kg), bool)
     cf_mask[np.arange(GEN_N_PER), t_obs] = False
-    truth = grid[cf_mask].reshape(GEN_N_PER, Kg - 1, -1)
-    identity = np.repeat(X_fact[:, None, :], Kg - 1, axis=1)
-    mse_identity = float(np.mean((identity - truth) ** 2))
+    # The per-angle mean is built from FACTUAL images only, so it is a legitimate baseline
+    # available to any method; both it and the reported metrics are computed on test units.
     mean_img = np.stack([X_fact[t_obs == t].mean(0) if (t_obs == t).any() else X_fact.mean(0)
                          for t in range(Kg)])
-    mean_pred = np.stack([mean_img[[t for t in range(Kg) if t != ti]] for ti in t_obs])
-    mse_mean = float(np.mean((mean_pred - truth) ** 2))
-    log(f"  baselines: copy-input MSE={mse_identity:.5f}  per-angle-mean MSE={mse_mean:.5f}")
 
-    # lambda_bal is selected on a TRAINING-SIDE diagnostic only: the smallest value that drives
-    # the angle out of the content code (decodability within DECOD_TOL of chance).  It is NOT
-    # selected on the counterfactual MSE, which is the quantity under test -- doing that would
-    # be fitting the hyperparameter to the benchmark.  The whole sweep is reported either way.
-    log("  selecting lambda_bal on angle-decodability (NOT on counterfactual MSE)")
-    sweep, chance = [], 1.0 / Kg
-    for lam in LAMBDA_BAL_GRID:
-        gs = CounterfactualGenerator(grid.shape[2], Kg, lambda_bal=lam,
-                                     steps=GEN_STEPS, seed=SEEDS[0]).fit(X_fact, t_obs)
-        d = treatment_decodability(gs.codes(X_fact), t_obs)
-        sweep.append({"lambda_bal": lam, "decodability": d, "final_rec": gs.final_rec})
-        log(f"    lambda_bal={lam:6.1f}: decodability={d:.3f} (chance {chance:.3f}) "
-            f"rec={gs.final_rec:.5f}")
-    ok = [s for s in sweep if s["decodability"] <= chance + DECOD_TOL]
-    lam_sel = min(s["lambda_bal"] for s in ok) if ok else max(LAMBDA_BAL_GRID)
-    log(f"  selected lambda_bal={lam_sel} "
-        f"({'smallest reaching chance-level decodability' if ok else 'none reached chance; using max'})")
-    out["lambda_selection"] = {"sweep": sweep, "selected": lam_sel,
-                               "criterion": "min lambda with angle decodability <= chance + "
-                                            f"{DECOD_TOL}", "chance": chance}
+    # Hyperparameters are selected on a VALIDATION SPLIT OF UNITS, never on the test
+    # counterfactuals.  A small set of validation units has one extra angle revealed purely for
+    # model selection; the reported metric uses only test units, whose counterfactuals no
+    # variant ever saw.  Selecting on the test metric would be fitting to the benchmark.
+    n_val = GEN_N_VAL
+    val_u, test_u = np.arange(n_val), np.arange(n_val, GEN_N_PER)
+    val_extra = (t_obs[val_u] + rng_g.integers(1, Kg, n_val)) % Kg      # one revealed CF angle
+    log(f"  selection: {n_val} validation units (1 extra angle revealed each); "
+        f"{len(test_u)} test units, counterfactuals never seen")
+
+    def cf_mse(gm, units, angles_mask):
+        preds = np.stack([gm.generate(X_fact[units], t) for t in range(Kg)], axis=1)
+        tr = grid[units]
+        return float(np.mean([(preds[i, t] - tr[i, t]) ** 2
+                              for i, u in enumerate(units) for t in range(Kg)
+                              if angles_mask(i, u, t)]))
+
+    sweep = []
+    for lam_bal, lam_cyc in GEN_GRID:
+        gm = ConvCounterfactualGenerator(grid.shape[2], Kg, lambda_bal=lam_bal,
+                                         lambda_cyc=lam_cyc, steps=GEN_STEPS,
+                                         seed=SEEDS[0]).fit(X_fact, t_obs)
+        v = cf_mse(gm, val_u, lambda i, u, t: t == val_extra[i])
+        sweep.append({"lambda_bal": lam_bal, "lambda_cyc": lam_cyc, "val_cf_mse": v,
+                      "rec": gm.final_rec, "z_std": gm.final_zstd})
+        log(f"    bal={lam_bal:5.1f} cyc={lam_cyc:4.1f}: VALIDATION cf_mse={v:.5f} "
+            f"rec={gm.final_rec:.5f} z_std={gm.final_zstd:.2f}")
+    best = min(sweep, key=lambda d: d["val_cf_mse"])
+    log(f"  selected lambda_bal={best['lambda_bal']}, lambda_cyc={best['lambda_cyc']} "
+        f"(best validation cf_mse; test counterfactuals not consulted)")
+    out["hyperparameter_selection"] = {"sweep": sweep, "selected": best,
+                                       "criterion": "min validation cf_mse on held-out units"}
+
+    # Baselines and the reported metric use TEST units only.
+    test_mask = cf_mask[test_u]
+    truth_t = grid[test_u][test_mask].reshape(len(test_u), Kg - 1, -1)
+    ident_t = np.repeat(X_fact[test_u][:, None, :], Kg - 1, axis=1)
+    mse_identity = float(np.mean((ident_t - truth_t) ** 2))
+    mean_pred_t = np.stack([mean_img[[t for t in range(Kg) if t != ti]] for ti in t_obs[test_u]])
+    mse_mean = float(np.mean((mean_pred_t - truth_t) ** 2))
+    log(f"  TEST baselines: copy-input MSE={mse_identity:.5f}  "
+        f"per-angle-mean MSE={mse_mean:.5f}")
 
     gen_runs = []
-    for lam, tag in ((lam_sel, "balanced"), (0.0, "control_lambda0")):
+    for lam_bal, lam_cyc, tag in ((best["lambda_bal"], best["lambda_cyc"], "balanced"),
+                                  (0.0, 0.0, "control_lambda0")):
         per_seed = []
         for seed in SEEDS[:2]:
-            gm = CounterfactualGenerator(grid.shape[2], Kg, lambda_bal=lam,
-                                         steps=GEN_STEPS, seed=seed).fit(X_fact, t_obs)
-            preds = np.stack([gm.generate(X_fact, t) for t in range(Kg)], axis=1)
-            mse = float(np.mean((preds[cf_mask].reshape(GEN_N_PER, Kg - 1, -1) - truth) ** 2))
+            gm = ConvCounterfactualGenerator(grid.shape[2], Kg, lambda_bal=lam_bal,
+                                             lambda_cyc=lam_cyc, steps=GEN_STEPS,
+                                             seed=seed).fit(X_fact, t_obs)
+            preds = np.stack([gm.generate(X_fact[test_u], t) for t in range(Kg)], axis=1)
+            mse = float(np.mean((preds[test_mask].reshape(len(test_u), Kg - 1, -1)
+                                 - truth_t) ** 2))
             dec = treatment_decodability(gm.codes(X_fact), t_obs)
             per_seed.append({"seed": seed, "cf_mse": mse, "angle_decodability": dec,
-                             "final_rec": gm.final_rec, "final_hsic": gm.final_hsic})
+                             "final_rec": gm.final_rec, "final_hsic": gm.final_hsic,
+                             "z_std": gm.final_zstd})
             rows.append({"part": f"gen_{tag}", "seed": seed, "cf_mse": mse,
                          "angle_decodability": dec})
         m = float(np.mean([r["cf_mse"] for r in per_seed]))
         d = float(np.mean([r["angle_decodability"] for r in per_seed]))
-        gen_runs.append({"tag": tag, "lambda_bal": lam, "cf_mse": m, "decodability": d,
-                         "runs": per_seed})
-        log(f"  {tag:16s}: counterfactual MSE={m:.5f}  angle decodability={d:.3f} "
+        gen_runs.append({"tag": tag, "lambda_bal": lam_bal, "lambda_cyc": lam_cyc,
+                         "cf_mse": m, "decodability": d, "runs": per_seed})
+        log(f"  {tag:16s}: TEST counterfactual MSE={m:.5f}  angle decodability={d:.3f} "
             f"(chance {1.0 / Kg:.3f})")
+    chance = 1.0 / Kg
+    lam_sel = best["lambda_bal"]
     out["generation"] = {"runs": gen_runs, "mse_identity": mse_identity,
                          "mse_mean_image": mse_mean, "chance_decodability": chance,
                          "n_units": GEN_N_PER, "input_dim": int(grid.shape[2]),

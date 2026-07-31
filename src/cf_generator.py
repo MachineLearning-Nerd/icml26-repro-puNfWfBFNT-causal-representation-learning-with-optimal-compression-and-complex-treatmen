@@ -45,10 +45,12 @@ class CounterfactualGenerator:
     """Encoder x -> z (content), decoder (z, e_t) -> x_hat. Trained on factuals only."""
 
     def __init__(self, input_dim, K, d_e=8, d_z=32, hidden=256,
-                 lambda_bal=50.0, steps=1500, lr=2e-3, seed=0):
+                 lambda_bal=50.0, lambda_cyc=1.0, lambda_var=10.0, steps=1500, batch=256,
+                 lr=2e-3, seed=0):
         torch.manual_seed(seed)
         np.random.seed(seed)
         self.K, self.lambda_bal, self.steps = K, lambda_bal, steps
+        self.lambda_cyc, self.lambda_var, self.batch = lambda_cyc, lambda_var, batch
         self.emb = nn.Embedding(K, d_e)
         nn.init.normal_(self.emb.weight, std=0.5)
         self.enc = nn.Sequential(
@@ -66,25 +68,59 @@ class CounterfactualGenerator:
         self.opt = torch.optim.Adam(self.params, lr=lr)
 
     def fit(self, X_fact, T_fact, log=None):
+        """Minibatch training with reconstruction, HSIC balancing, and latent cycle consistency.
+
+        Minibatching matters for more than speed.  With only a few hundred factual images and
+        full-batch updates, the decoder can MEMORISE each observed (z, e_t) pair -- driving
+        reconstruction near zero while learning nothing about the compositional structure
+        (identity x angle) that an unseen (z, e_t') combination requires.  Measured on the
+        2026-07-31 revision: reconstruction 0.0079, yet generated counterfactuals preserved
+        identity barely above chance (top-1 retrieval 0.011 vs chance 0.0025).
+
+        Cycle consistency attacks that directly and uses NO counterfactual supervision: decode
+        at a random OTHER treatment t', re-encode, and require the content code to come back
+        unchanged.  A memorised decoder cannot satisfy this, because its off-diagonal outputs
+        are unconstrained; a compositional one can.
+        """
         Xt = torch.tensor(X_fact, dtype=torch.float32)
         Tt = torch.tensor(T_fact, dtype=torch.long)
-        Toh = torch.nn.functional.one_hot(Tt, self.K).float()
+        n = len(Xt)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.steps)
+        g = torch.Generator().manual_seed(12345)
         for it in range(self.steps):
+            idx = torch.randint(0, n, (min(self.batch, n),), generator=g)
+            xb, tb = Xt[idx], Tt[idx]
+            toh = torch.nn.functional.one_hot(tb, self.K).float()
             self.opt.zero_grad()
-            z = self.enc(Xt)
-            xh = self.dec(torch.cat([z, self.emb(Tt)], 1))
-            rec = nn.functional.mse_loss(xh, Xt)
-            bal = hsic(z, Toh)
-            (rec + self.lambda_bal * bal).backward()
+            z = self.enc(xb)
+            rec = nn.functional.mse_loss(self.dec(torch.cat([z, self.emb(tb)], 1)), xb)
+            bal = hsic(z, toh)
+            # Variance floor (VICReg-style).  HSIC is trivially minimised by a CONSTANT z --
+            # independence is free if the code carries no information -- and the collapsed
+            # optimum makes the decoder emit the per-angle mean, which is exactly the baseline
+            # we are trying to beat.  Penalising per-dimension std below 1 makes collapse
+            # unavailable while leaving genuine independence attainable.
+            var = torch.relu(1.0 - z.std(0)).mean()
+            loss = rec + self.lambda_bal * bal + self.lambda_var * var
+            if self.lambda_cyc > 0:
+                t2 = (tb + torch.randint(1, self.K, tb.shape, generator=g)) % self.K
+                x_cf = self.dec(torch.cat([z, self.emb(t2)], 1))
+                cyc = nn.functional.mse_loss(self.enc(x_cf), z)
+                loss = loss + self.lambda_cyc * cyc
+            else:
+                cyc = torch.zeros(())
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(self.params, 5.0)
             self.opt.step()
             sched.step()
-            if log and it % 500 == 0:
-                log(f"      step {it}: rec={rec.item():.5f} hsic={bal.item():.6f}")
+            if log and it % 1000 == 0:
+                log(f"      step {it}: rec={rec.item():.5f} hsic={bal.item():.6f} "
+                    f"cyc={float(cyc):.5f}")
         with torch.no_grad():
             self.final_rec = float(rec.item())
             self.final_hsic = float(bal.item())
+            self.final_cyc = float(cyc)
+            self.final_zstd = float(z.std(0).mean())
         return self
 
     @torch.no_grad()
@@ -112,3 +148,38 @@ def treatment_decodability(Z, T, seed=0):
 
     clf = LogisticRegression(max_iter=2000)   # multinomial is the default in sklearn >= 1.5
     return float(cross_val_score(clf, Z, T, cv=3, scoring="accuracy").mean())
+
+
+class ConvCounterfactualGenerator(CounterfactualGenerator):
+    """Same objective, but convolutional -- the right inductive bias for 28x28 images.
+
+    The MLP version reached counterfactual MSE 0.0586 against a per-angle-mean baseline of
+    0.0522: it renders the correct angle (classifier accuracy 0.982) but loses unit identity,
+    because a dense 784->784 map has to learn rotation as an unstructured permutation of
+    pixels.  Convolutions share weights across spatial positions, so local stroke structure
+    survives the transform and identity has a chance to be preserved.
+    """
+
+    def __init__(self, input_dim, K, d_e=8, d_z=32, hidden=256, lambda_bal=50.0,
+                 lambda_cyc=1.0, lambda_var=10.0, steps=1500, batch=256, lr=2e-3, seed=0):
+        super().__init__(input_dim, K, d_e, d_z, hidden, lambda_bal, lambda_cyc,
+                         lambda_var, steps, batch, lr, seed)
+        assert input_dim == 784, "conv variant expects 28x28"
+        torch.manual_seed(seed)
+        self.enc = nn.Sequential(
+            nn.Unflatten(1, (1, 28, 28)),
+            nn.Conv2d(1, 32, 4, 2, 1), nn.ELU(),      # 14x14
+            nn.Conv2d(32, 64, 4, 2, 1), nn.ELU(),     # 7x7
+            nn.Flatten(), nn.Linear(64 * 7 * 7, d_z),
+        )
+        self.dec_fc = nn.Sequential(nn.Linear(d_z + d_e, 64 * 7 * 7), nn.ELU())
+        self.dec_deconv = nn.Sequential(
+            nn.Unflatten(1, (64, 7, 7)),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.ELU(),   # 14x14
+            nn.ConvTranspose2d(32, 1, 4, 2, 1), nn.Sigmoid(),  # 28x28
+            nn.Flatten(),
+        )
+        self.dec = nn.Sequential(self.dec_fc, self.dec_deconv)
+        self.params = (list(self.emb.parameters()) + list(self.enc.parameters())
+                       + list(self.dec.parameters()))
+        self.opt = torch.optim.Adam(self.params, lr=lr)
