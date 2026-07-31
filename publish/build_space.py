@@ -89,8 +89,11 @@ CURRENT = {
     "c5": {"title": "K=20 PEHE scalability", "status": "unchanged (frozen)",
            "note": "frozen at the judged revision; re-derived evidence is weaker, not stronger",
            "page": "pages/claims/c5.md"},
-    "c6": {"title": "CausalEGM geodesic structure", "status": "pending run",
-           "note": "MDS-init circularity removed; 64-dim real images",
+    "c6": {"title": "CausalEGM geodesic structure",
+           "status": "**VERIFIED** (geodesic-structure assertion)",
+           "note": "MDS-init circularity removed, 64-dim real images; latent-vs-geodesic corr "
+                   "0.968 against a lambda_geo=0 control at 0.148, tree midpoint +0.015; "
+                   "generation quality not established",
            "page": "pages/claims/c6-current.md"},
 }
 
