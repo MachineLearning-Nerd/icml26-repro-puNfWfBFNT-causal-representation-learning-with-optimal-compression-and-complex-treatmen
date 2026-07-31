@@ -64,7 +64,7 @@ K20_ALPHA_GRID = [0.0, 5.0]
 # decisive part: it settles which PEHE convention the paper reports, which is the judge's
 # stated objection. Phase 2 is limited to the two alphas the claim actually names (the
 # unregularised baseline and the alpha=5.0 instability point).
-RUN_PHASE2 = True
+RUN_PHASE2 = False   # Phase 1 answers the judge's objection; Phase 2 is left for a later node
 ANCHOR_REL_TOL = 0.15
 
 
@@ -150,6 +150,29 @@ def run():
             f"best was {best['convention']} at max_rel_err={best['max_rel_err']:.3f}")
     else:
         log(f"  SELECTED convention: {selected} (max_rel_err={best['max_rel_err']:.3f})")
+
+    if not RUN_PHASE2:
+        log("PHASE 2 SKIPPED (RUN_PHASE2=False): reporting the convention adjudication only.")
+        save_rows_csv(rows, "claim5_k20_fixed.csv")
+        result = {
+            "claim": "Claim 5: K=20 pairwise unstable (PEHE>1.3), aggregation stable (~1.0)",
+            "verdict": "BLOCKED",
+            "reason": (
+                "Phase 1 only. The K=20 numeric thresholds cannot be compared on a common "
+                "scale until a PEHE convention reproduces the paper's four K=4 anchors; this "
+                "run reports that adjudication. See convention_ranking."
+            ),
+            "phase1_only": True,
+            "convention_ranking": scored,
+            "selected_convention": selected,
+            "k4_anchors_paper": PAPER_K4_ANCHORS,
+            "zero_effect_reference_K4": zero_ref_k4,
+            "seeds": SEEDS, "steps_per_fit": STEPS, "test_frac": TEST_FRAC,
+            "n_fits": len(rows), "runtime_s": time.perf_counter() - t_start,
+            "system": system_info(),
+        }
+        save_json(result, "claim5_k20_fixed.json")
+        return result
 
     log("PHASE 2: K=20 alpha sweep")
     k20 = {}
