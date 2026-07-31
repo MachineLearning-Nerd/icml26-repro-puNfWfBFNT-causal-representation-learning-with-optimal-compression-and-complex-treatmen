@@ -61,10 +61,12 @@ from verifiers.common import log, save_json, system_info
 # is the point of removing the MDS warm start.
 SEEDS = [0, 1, 2]
 CONFOUND_STRENGTH = 2.0   # logit bonus on a unit's own digit class; bounded => overlap holds
-GEN_N_PER = 1500          # base images for the generation benchmark (one factual angle each)
-GEN_N_VAL = 250           # units reserved for hyperparameter selection
-GEN_STEPS = 2000
-GEN_GRID = [(5.0, 1.0), (5.0, 3.0), (2.0, 2.0), (10.0, 1.0)]   # (lambda_bal, lambda_cyc)
+GEN_N_PER = 1000          # base images for the generation benchmark (one factual angle each)
+GEN_N_VAL = 200           # units reserved for hyperparameter selection
+GEN_STEPS = 1200
+# Trimmed to two configurations: an HF cpu-upgrade instance measured ~35x slower than
+# the previous one (6 min/fit vs 9 s), so the sweep must survive a contended machine.
+GEN_GRID = [(5.0, 1.0), (2.0, 2.0)]   # (lambda_bal, lambda_cyc)
 LAMBDA_GEO = 5.0          # Appendix D.5
 STEPS = 1200
 D_E = 2                   # 2-D latent so the ring/tree is directly inspectable, as in Fig. 6
