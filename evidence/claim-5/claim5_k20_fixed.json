@@ -1,0 +1,113 @@
+{
+  "claim": "Claim 5: K=20 pairwise unstable (PEHE>1.3), aggregation stable (~1.0)",
+  "verdict": "BLOCKED",
+  "reason": "Phase 1 only. The K=20 numeric thresholds cannot be compared on a common scale until a PEHE convention reproduces the paper's four K=4 anchors; this run reports that adjudication. See convention_ranking.",
+  "phase1_only": true,
+  "convention_ranking": [
+    {
+      "convention": "rms_over_pairs__abs",
+      "max_rel_err": 0.3865099170295858,
+      "all_within_tol": false,
+      "K4_base": 0.4883381060444497,
+      "K4_ova": 0.6864651702593559,
+      "K4_pair": 0.9135975102519261,
+      "K4_agg": 0.4935481459622211
+    },
+    {
+      "convention": "rms_over_pairs__signed",
+      "max_rel_err": 0.5316551970315789,
+      "all_within_tol": false,
+      "K4_base": 0.5061259076182231,
+      "K4_ova": 0.7860006418331904,
+      "K4_pair": 1.1135133282419578,
+      "K4_agg": 0.514996754518596
+    },
+    {
+      "convention": "mean_pairs_nosqrt__abs",
+      "max_rel_err": 0.6909204493614969,
+      "all_within_tol": false,
+      "K4_base": 0.24602732230824853,
+      "K4_ova": 0.5190216931443701,
+      "K4_pair": 1.0194502901039053,
+      "K4_agg": 0.25197312268873095
+    },
+    {
+      "convention": "mean_pairs_nosqrt__signed",
+      "max_rel_err": 1.1938150447538824,
+      "all_within_tol": false,
+      "K4_base": 0.2648289572847934,
+      "K4_ova": 0.7033503896938529,
+      "K4_pair": 1.5949035375360725,
+      "K4_agg": 0.2749828099089481
+    },
+    {
+      "convention": "sqrt_eq2_sum__abs",
+      "max_rel_err": 2.078194952399371,
+      "all_within_tol": false,
+      "K4_base": 1.1961791817660434,
+      "K4_ova": 1.6814893933282005,
+      "K4_pair": 2.2378477303943423,
+      "K4_agg": 1.2089411211041154
+    },
+    {
+      "convention": "sqrt_eq2_sum__signed",
+      "max_rel_err": 2.7517736946094,
+      "all_within_tol": false,
+      "K4_base": 1.239750219267664,
+      "K4_ova": 1.9253005099913945,
+      "K4_pair": 2.7275394759810334,
+      "K4_agg": 1.2614792677599271
+    },
+    {
+      "convention": "eq2_sum_nosqrt__abs",
+      "max_rel_err": 7.413620000857541,
+      "all_within_tol": false,
+      "K4_base": 1.4761639338494912,
+      "K4_ova": 3.114130158866221,
+      "K4_pair": 6.116701740623432,
+      "K4_agg": 1.5118387361323855
+    },
+    {
+      "convention": "eq2_sum_nosqrt__signed",
+      "max_rel_err": 12.162890268523293,
+      "all_within_tol": false,
+      "K4_base": 1.58897374370876,
+      "K4_ova": 4.220102338163117,
+      "K4_pair": 9.569421225216434,
+      "K4_agg": 1.6498968594536882
+    }
+  ],
+  "selected_convention": null,
+  "k4_anchors_paper": {
+    "base": 0.796,
+    "ova": 0.711,
+    "pair": 0.727,
+    "agg": 0.722
+  },
+  "zero_effect_reference_K4": {
+    "eq2_sum_nosqrt__abs": 14.010512666137366,
+    "mean_pairs_nosqrt__abs": 2.3350854443562277,
+    "rms_over_pairs__abs": 1.528098636985266,
+    "sqrt_eq2_sum__abs": 3.743061937256364,
+    "eq2_sum_nosqrt__signed": 14.010512666137366,
+    "mean_pairs_nosqrt__signed": 2.3350854443562277,
+    "rms_over_pairs__signed": 1.528098636985266,
+    "sqrt_eq2_sum__signed": 3.743061937256364
+  },
+  "seeds": [
+    42,
+    43
+  ],
+  "steps_per_fit": 1200,
+  "test_frac": 0.3,
+  "n_fits": 8,
+  "runtime_s": 69.71248137501243,
+  "system": {
+    "python_version": "3.12.11",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "processor": "arm",
+    "numpy_version": "1.26.4",
+    "torch_version": "2.13.0",
+    "timestamp": "2026-08-02T13:15:00.922685+00:00"
+  }
+}

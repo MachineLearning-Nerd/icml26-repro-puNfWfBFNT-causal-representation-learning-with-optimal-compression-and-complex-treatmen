@@ -1,0 +1,44 @@
+{
+  "claim": "Claim 1 Steps 2-4 on trained representations with TV IPM",
+  "verdict": "VERIFIED",
+  "derived_constants": {
+    "c1": 1.0,
+    "c2": 1.0,
+    "c3": 0.0
+  },
+  "checks": {
+    "trained_models": 9,
+    "minimum_representation_separation": 0.001286903047002852,
+    "all_representations_injective": true,
+    "all_step2_tv_bounds_hold": true,
+    "maximum_absolute_risk_gap_over_tv": 0.21352846831731243,
+    "maximum_arm_loss_disagreement": 1.1102230246251565e-16,
+    "no_ipm_control_failures": 54,
+    "step4_class_size": 36,
+    "step4_hoeffding_radius": 0.017407371992647788,
+    "step4_maximum_gap": 0.0015738306860604984,
+    "all_step4_bounds_hold": true,
+    "zero_complexity_control_failures": 36,
+    "minimum_treatment_probability": 0.016983229340125396
+  },
+  "design": {
+    "seed": 20260802,
+    "K": 4,
+    "population_states": 101,
+    "n_train": 1200,
+    "n_eval": 12000,
+    "steps": 500,
+    "strategies": [
+      "pair",
+      "ova",
+      "agg"
+    ],
+    "alphas": [
+      0.0,
+      0.5,
+      2.0
+    ],
+    "loss_bound": 1.0,
+    "delta": 0.05
+  }
+}

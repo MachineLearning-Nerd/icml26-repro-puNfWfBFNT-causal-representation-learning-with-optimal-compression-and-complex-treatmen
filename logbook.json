@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "title": "Repro - Multi-Treatment Balancing (arXiv 2603.11907)",
+  "emoji": "\ud83c\udfaf",
+  "space_id": "DineshAI/puNfWfBFNT",
+  "paper": null,
+  "tags": [
+    "icml2026-repro",
+    "paper-puNfWfBFNT"
+  ],
+  "updated_at": "2026-08-02T12:55:00+00:00",
+  "root": {
+    "slug": "index",
+    "title": "Repro - Multi-Treatment Balancing (arXiv 2603.11907)",
+    "file": "pages/index.md",
+    "children": [
+      {
+        "slug": "executive-summary",
+        "title": "Executive summary",
+        "file": "pages/executive-summary/page.md",
+        "children": []
+      },
+      {
+        "slug": "claim-1",
+        "title": "Claim 1 \u2014 multi-treatment generalization bound",
+        "file": "pages/claim-1/page.md",
+        "children": []
+      },
+      {
+        "slug": "claim-2",
+        "title": "Claim 2 \u2014 finite-sample deviation bound",
+        "file": "pages/claim-2/page.md",
+        "children": []
+      },
+      {
+        "slug": "claim-3",
+        "title": "Claim 3 \u2014 O(1) aggregation complexity",
+        "file": "pages/claim-3/page.md",
+        "children": []
+      },
+      {
+        "slug": "claim-4",
+        "title": "Claim 4 \u2014 asymptotic normality and variance scaling",
+        "file": "pages/claim-4/page.md",
+        "children": []
+      },
+      {
+        "slug": "claim-5",
+        "title": "Claim 5 \u2014 K=20 PEHE scalability",
+        "file": "pages/claim-5/page.md",
+        "children": []
+      },
+      {
+        "slug": "claim-6",
+        "title": "Claim 6 \u2014 high-dimensional generation and geodesics",
+        "file": "pages/claim-6/page.md",
+        "children": []
+      },
+      {
+        "slug": "conclusion",
+        "title": "Conclusion",
+        "file": "pages/conclusion/page.md",
+        "children": []
+      },
+      {
+        "slug": "overview",
+        "title": "Overview (v2 \u2014 evidence-backed)",
+        "file": "pages/overview/page.md",
+        "children": [],
+        "hidden": true
+      },
+      {
+        "slug": "overview-historical",
+        "title": "Historical rejected baseline (judge 0/12)",
+        "file": "pages/overview-historical/page.md",
+        "children": [],
+        "hidden": true
+      },
+      {
+        "slug": "claims",
+        "title": "Claim Verifications (current)",
+        "file": "pages/claims/index.md",
+        "children": [
+          {
+            "slug": "c1-current",
+            "title": "C1: Lemma 3.2 decomposition \u2014 **VERIFIED** (all 4 proof steps)",
+            "file": "pages/claims/c1-current.md",
+            "children": []
+          },
+          {
+            "slug": "c2c4-current",
+            "title": "C2: Thm 3.5 deviation bound \u2014 **BLOCKED** (hypotheses not in force)",
+            "file": "pages/claims/c2c4-current.md",
+            "children": []
+          },
+          {
+            "slug": "c3",
+            "title": "C3: HSIC O(1) complexity \u2014 unchanged (regression re-run passes)",
+            "file": "pages/claims/c3.md",
+            "children": []
+          },
+          {
+            "slug": "c2c4-current",
+            "title": "C4: Thm 3.8 / Cor 3.9 variance scaling \u2014 **BLOCKED** (hypotheses not in force)",
+            "file": "pages/claims/c2c4-current.md",
+            "children": []
+          },
+          {
+            "slug": "c5",
+            "title": "C5: K=20 PEHE scalability \u2014 unchanged (frozen)",
+            "file": "pages/claims/c5.md",
+            "children": []
+          },
+          {
+            "slug": "c6-current",
+            "title": "C6: CausalEGM geodesic structure \u2014 geodesic clause **VERIFIED**; generation clause **NOT ESTABLISHED**",
+            "file": "pages/claims/c6-current.md",
+            "children": []
+          },
+          {
+            "slug": "historical",
+            "title": "Historical rejected baseline",
+            "file": "pages/claims/index.md",
+            "children": [
+              {
+                "slug": "c1-hist",
+                "title": "C1 \u2014 historical rejected baseline",
+                "file": "pages/claims/c1.md",
+                "children": []
+              },
+              {
+                "slug": "c2-hist",
+                "title": "C2 \u2014 historical rejected baseline",
+                "file": "pages/claims/c2.md",
+                "children": []
+              },
+              {
+                "slug": "c4-hist",
+                "title": "C4 \u2014 historical rejected baseline",
+                "file": "pages/claims/c4.md",
+                "children": []
+              },
+              {
+                "slug": "c6-hist",
+                "title": "C6 \u2014 historical rejected baseline",
+                "file": "pages/claims/c6.md",
+                "children": []
+              }
+            ]
+          }
+        ],
+        "hidden": true
+      }
+    ]
+  },
+  "agent_view_tokens": 12000,
+  "revision": "20260802125500"
+}

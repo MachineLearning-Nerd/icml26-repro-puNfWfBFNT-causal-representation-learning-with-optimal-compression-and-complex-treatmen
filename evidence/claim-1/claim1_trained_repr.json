@@ -1,0 +1,423 @@
+{
+  "claim": "Claim 1: Lemma 3.2 Steps 2-3 on trained deep representations",
+  "verdict": "BLOCKED",
+  "reason": "checks: {'n_triples': 540, 'n_trained_models': 45, 'r2_with_ipm': -7.8921768949092375, 'r2_without_ipm': 0.5352182155427792, 'mixture_inequality_on_learned_phi': True, 'min_propensity': 0.008741489890954886}",
+  "checks": {
+    "n_triples": 540,
+    "n_trained_models": 45,
+    "r2_with_ipm": -7.8921768949092375,
+    "r2_without_ipm": 0.5352182155427792,
+    "mixture_inequality_on_learned_phi": true,
+    "min_propensity": 0.008741489890954886
+  },
+  "details": {
+    "per_model": [
+      {
+        "strategy": "pair",
+        "alpha": 0.0,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.12971282184076768,
+        "mean_eps_tar": 0.06644673509680656
+      },
+      {
+        "strategy": "pair",
+        "alpha": 0.0,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.12722427046584062,
+        "mean_eps_tar": 0.07205243588866235
+      },
+      {
+        "strategy": "pair",
+        "alpha": 0.0,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.13387295662279755,
+        "mean_eps_tar": 0.101956250371934
+      },
+      {
+        "strategy": "pair",
+        "alpha": 0.1,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.054091678446727465,
+        "mean_eps_tar": 0.21729759249293035
+      },
+      {
+        "strategy": "pair",
+        "alpha": 0.1,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.04590968738208732,
+        "mean_eps_tar": 0.26891819706828374
+      },
+      {
+        "strategy": "pair",
+        "alpha": 0.1,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.049635419316769507,
+        "mean_eps_tar": 0.2749981103934208
+      },
+      {
+        "strategy": "pair",
+        "alpha": 0.5,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.011666769496916219,
+        "mean_eps_tar": 0.48112998460896117
+      },
+      {
+        "strategy": "pair",
+        "alpha": 0.5,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.013997619452810679,
+        "mean_eps_tar": 0.4797082175896524
+      },
+      {
+        "strategy": "pair",
+        "alpha": 0.5,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.015792161814986983,
+        "mean_eps_tar": 0.48640437056045527
+      },
+      {
+        "strategy": "pair",
+        "alpha": 2.0,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.008878581308891118,
+        "mean_eps_tar": 0.5062074964450324
+      },
+      {
+        "strategy": "pair",
+        "alpha": 2.0,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.007591610736185194,
+        "mean_eps_tar": 0.5088522521794492
+      },
+      {
+        "strategy": "pair",
+        "alpha": 2.0,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.012871753183469427,
+        "mean_eps_tar": 0.5084186425625838
+      },
+      {
+        "strategy": "pair",
+        "alpha": 8.0,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.00709795917046161,
+        "mean_eps_tar": 0.5263682691429209
+      },
+      {
+        "strategy": "pair",
+        "alpha": 8.0,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.007936715400265394,
+        "mean_eps_tar": 0.5264256226998445
+      },
+      {
+        "strategy": "pair",
+        "alpha": 8.0,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.012145509251064156,
+        "mean_eps_tar": 0.5228541398217903
+      },
+      {
+        "strategy": "ova",
+        "alpha": 0.0,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.12971282184076768,
+        "mean_eps_tar": 0.06644673509680656
+      },
+      {
+        "strategy": "ova",
+        "alpha": 0.0,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.12722427046584062,
+        "mean_eps_tar": 0.07205243588866235
+      },
+      {
+        "strategy": "ova",
+        "alpha": 0.0,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.13387295662279755,
+        "mean_eps_tar": 0.101956250371934
+      },
+      {
+        "strategy": "ova",
+        "alpha": 0.1,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.11075582645371741,
+        "mean_eps_tar": 0.07672226338996563
+      },
+      {
+        "strategy": "ova",
+        "alpha": 0.1,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.10716560677155844,
+        "mean_eps_tar": 0.10783085295227902
+      },
+      {
+        "strategy": "ova",
+        "alpha": 0.1,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.1055502773056093,
+        "mean_eps_tar": 0.13192288581108372
+      },
+      {
+        "strategy": "ova",
+        "alpha": 0.5,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.01454005846182028,
+        "mean_eps_tar": 0.4625782436559567
+      },
+      {
+        "strategy": "ova",
+        "alpha": 0.5,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.01891317371011274,
+        "mean_eps_tar": 0.4455082257112402
+      },
+      {
+        "strategy": "ova",
+        "alpha": 0.5,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.01760412802257605,
+        "mean_eps_tar": 0.4496389763847208
+      },
+      {
+        "strategy": "ova",
+        "alpha": 2.0,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.009718875495980791,
+        "mean_eps_tar": 0.4964785349328393
+      },
+      {
+        "strategy": "ova",
+        "alpha": 2.0,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.009885344546831236,
+        "mean_eps_tar": 0.49497449653649767
+      },
+      {
+        "strategy": "ova",
+        "alpha": 2.0,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.013639667752833545,
+        "mean_eps_tar": 0.5094942486870362
+      },
+      {
+        "strategy": "ova",
+        "alpha": 8.0,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.00781596120222132,
+        "mean_eps_tar": 0.5194963108927927
+      },
+      {
+        "strategy": "ova",
+        "alpha": 8.0,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.008313301214291675,
+        "mean_eps_tar": 0.5206913329948422
+      },
+      {
+        "strategy": "ova",
+        "alpha": 8.0,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.013616090435772955,
+        "mean_eps_tar": 0.5137751885638556
+      },
+      {
+        "strategy": "agg",
+        "alpha": 0.0,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.12971282184076768,
+        "mean_eps_tar": 0.06644673509680656
+      },
+      {
+        "strategy": "agg",
+        "alpha": 0.0,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.12722427046584062,
+        "mean_eps_tar": 0.07205243588866235
+      },
+      {
+        "strategy": "agg",
+        "alpha": 0.0,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.13387295662279755,
+        "mean_eps_tar": 0.101956250371934
+      },
+      {
+        "strategy": "agg",
+        "alpha": 0.1,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.12783076729167142,
+        "mean_eps_tar": 0.06576100136795461
+      },
+      {
+        "strategy": "agg",
+        "alpha": 0.1,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.125738660780808,
+        "mean_eps_tar": 0.0686782046157153
+      },
+      {
+        "strategy": "agg",
+        "alpha": 0.1,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.13268456362848058,
+        "mean_eps_tar": 0.10247260496014739
+      },
+      {
+        "strategy": "agg",
+        "alpha": 0.5,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.1225563765812203,
+        "mean_eps_tar": 0.060494189460223474
+      },
+      {
+        "strategy": "agg",
+        "alpha": 0.5,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.12160799833166049,
+        "mean_eps_tar": 0.06530993957085869
+      },
+      {
+        "strategy": "agg",
+        "alpha": 0.5,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.12785758924783178,
+        "mean_eps_tar": 0.09811008156340116
+      },
+      {
+        "strategy": "agg",
+        "alpha": 2.0,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.1179344210992146,
+        "mean_eps_tar": 0.061748314293760174
+      },
+      {
+        "strategy": "agg",
+        "alpha": 2.0,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.11861795572180762,
+        "mean_eps_tar": 0.0645126263645092
+      },
+      {
+        "strategy": "agg",
+        "alpha": 2.0,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.12093460954783426,
+        "mean_eps_tar": 0.0904774686663274
+      },
+      {
+        "strategy": "agg",
+        "alpha": 8.0,
+        "seed": 0,
+        "n_triples": 12,
+        "mean_ipm": 0.11638110651532824,
+        "mean_eps_tar": 0.06661273793668747
+      },
+      {
+        "strategy": "agg",
+        "alpha": 8.0,
+        "seed": 1,
+        "n_triples": 12,
+        "mean_ipm": 0.11676409485921513,
+        "mean_eps_tar": 0.0735149585604994
+      },
+      {
+        "strategy": "agg",
+        "alpha": 8.0,
+        "seed": 2,
+        "n_triples": 12,
+        "mean_ipm": 0.11688967090099382,
+        "mean_eps_tar": 0.09407380230620466
+      }
+    ],
+    "with_ipm": {
+      "coef": [
+        0.1147904802715983,
+        3.4583050132612216,
+        0.4993302728272353
+      ],
+      "r2": -7.8921768949092375
+    },
+    "without_ipm": {
+      "coef": [
+        1.3487946338830965,
+        0.13818587828046974
+      ],
+      "r2": 0.5352182155427792
+    },
+    "mixture": [
+      {
+        "strategy": "pair",
+        "d_pair": 0.0434822362585947,
+        "d_ova": 0.01916161743461628,
+        "bound": 0.05748485230384884,
+        "holds": true
+      },
+      {
+        "strategy": "ova",
+        "d_pair": 0.05329439187301964,
+        "d_ova": 0.023103388124765412,
+        "bound": 0.06931016437429624,
+        "holds": true
+      },
+      {
+        "strategy": "agg",
+        "d_pair": 0.6610492245069906,
+        "d_ova": 0.2702920413160448,
+        "bound": 0.8108761239481344,
+        "holds": true
+      }
+    ]
+  },
+  "system": {
+    "python_version": "3.12.11",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "processor": "arm",
+    "numpy_version": "1.26.4",
+    "torch_version": "2.13.0",
+    "timestamp": "2026-08-02T13:13:19.218316+00:00"
+  }
+}

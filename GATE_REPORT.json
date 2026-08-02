@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-08-02T13:42:18Z",
+  "poster_html": "poster.html",
+  "canvas": {
+    "source": "page-rule",
+    "width_cm": 60.96,
+    "height_cm": 91.44,
+    "orientation": "portrait",
+    "source_url": null
+  },
+  "overall": "PASS",
+  "hard_failures": 0,
+  "warnings": 0,
+  "gates": [
+    {
+      "name": "preflight",
+      "severity": "hard",
+      "status": "PASS"
+    },
+    {
+      "name": "style",
+      "severity": "hard",
+      "status": "PASS"
+    },
+    {
+      "name": "asset",
+      "severity": "hard",
+      "status": "NOT_RUN"
+    },
+    {
+      "name": "measure",
+      "severity": "hard",
+      "status": "PASS"
+    },
+    {
+      "name": "polish",
+      "severity": "hard",
+      "status": "PASS"
+    }
+  ]
+}
